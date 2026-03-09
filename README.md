@@ -2,7 +2,7 @@
 
 A real-time AI debate/argument assist + analysis + summary platform, built with Next.js + LiveKit + Deepgram + PostgreSQL.
 
-## Features (English default)
+## Features
 
 - User registration/login, room create/join, real-time voice communication, and text transcription
 - Room creators can end a conversation; ended rooms become read-only (history visible, no more text/voice input)

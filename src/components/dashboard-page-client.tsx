@@ -576,19 +576,26 @@ export default function DashboardPageClient({
                         ) : (
                           <ul className="room-list">
                             {createdRooms.map((room) => (
-                              <li key={`created-${room.roomId}`} className="room-list-item">
-                                <div>
-                                  <strong>{room.roomId}</strong>
-                                  <p>
-                                    {t("状态", "Status")}: {roomStatusLabel(room.status, language)} |{" "}
-                                    {t("成员", "Members")}: {room.participantCount} |{" "}
-                                    {t("消息", "Messages")}: {room.messageCount}
-                                  </p>
-                                  <p>
-                                    {t("创建", "Created")}: {formatDate(room.createdAt, language)}
-                                  </p>
-                                </div>
-                                <Link href={`/${encodeURIComponent(room.roomId)}`}>{t("进入", "Open")}</Link>
+                              <li key={`created-${room.roomId}`}>
+                                <Link
+                                  className="room-list-item"
+                                  href={`/${encodeURIComponent(room.roomId)}`}
+                                  aria-label={`${t("进入房间", "Open room")} ${room.roomId}`}
+                                >
+                                  <div className="room-list-item-copy">
+                                    <strong>{room.roomId}</strong>
+                                    <p>
+                                      {t("成员", "Members")}: {room.participantCount} |{" "}
+                                      {t("消息", "Messages")}: {room.messageCount}
+                                    </p>
+                                    <p>
+                                      {t("创建", "Created")}: {formatDate(room.createdAt, language)}
+                                    </p>
+                                  </div>
+                                  <span className="room-list-status" data-status={room.status}>
+                                    {roomStatusLabel(room.status, language)}
+                                  </span>
+                                </Link>
                               </li>
                             ))}
                           </ul>
@@ -602,20 +609,27 @@ export default function DashboardPageClient({
                         ) : (
                           <ul className="room-list">
                             {joinedRooms.map((room) => (
-                              <li key={`joined-${room.roomId}`} className="room-list-item">
-                                <div>
-                                  <strong>{room.roomId}</strong>
-                                  <p>
-                                    {t("状态", "Status")}: {roomStatusLabel(room.status, language)} |{" "}
-                                    {t("成员", "Members")}: {room.participantCount} |{" "}
-                                    {t("消息", "Messages")}: {room.messageCount}
-                                  </p>
-                                  <p>
-                                    {t("最近加入", "Last joined")}:{" "}
-                                    {formatDate(room.joinedAt ?? room.updatedAt, language)}
-                                  </p>
-                                </div>
-                                <Link href={`/${encodeURIComponent(room.roomId)}`}>{t("进入", "Open")}</Link>
+                              <li key={`joined-${room.roomId}`}>
+                                <Link
+                                  className="room-list-item"
+                                  href={`/${encodeURIComponent(room.roomId)}`}
+                                  aria-label={`${t("进入房间", "Open room")} ${room.roomId}`}
+                                >
+                                  <div className="room-list-item-copy">
+                                    <strong>{room.roomId}</strong>
+                                    <p>
+                                      {t("成员", "Members")}: {room.participantCount} |{" "}
+                                      {t("消息", "Messages")}: {room.messageCount}
+                                    </p>
+                                    <p>
+                                      {t("最近加入", "Last joined")}:{" "}
+                                      {formatDate(room.joinedAt ?? room.updatedAt, language)}
+                                    </p>
+                                  </div>
+                                  <span className="room-list-status" data-status={room.status}>
+                                    {roomStatusLabel(room.status, language)}
+                                  </span>
+                                </Link>
                               </li>
                             ))}
                           </ul>

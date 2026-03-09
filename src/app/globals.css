@@ -283,22 +283,36 @@ a:focus-visible {
 .room-list-item {
   border: 1px solid var(--line);
   padding: 16px 20px;
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
   background: var(--card);
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, background-color 0.2s;
   border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
 }
 
-.room-list-item:hover {
+.room-list-item:hover,
+.room-list-item:focus-visible {
   border-color: var(--primary);
+  background: color-mix(in srgb, var(--card) 88%, var(--primary) 12%);
+}
+
+.room-list-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .room-list-item strong {
   font-size: 1rem;
   font-weight: 600;
+}
+
+.room-list-item-copy {
+  min-width: 0;
 }
 
 .room-list-item p {
@@ -307,23 +321,27 @@ a:focus-visible {
   font-size: 0.9rem;
 }
 
-.room-list-item a {
+.room-list-status {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 40px;
-  padding: 0 16px;
+  min-width: 88px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
   background: var(--surface);
-  color: var(--foreground);
-  text-decoration: none;
-  font-weight: 500;
-  font-size: 0.9rem;
-  transition: background 0.2s;
-  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
-.room-list-item a:hover {
-  background: var(--line);
+.room-list-status[data-status="ACTIVE"] {
+  border-color: color-mix(in srgb, var(--primary) 14%, var(--line) 86%);
+  background: color-mix(in srgb, var(--primary) 6%, var(--card) 94%);
+  color: var(--primary);
 }
 
 .key-status-grid {
