@@ -1,5 +1,7 @@
 import { RoomStatus } from "@prisma/client";
 
+import { resolveConversationLlmRuntimeForOwner } from "@/lib/llm-provider-keys";
+import { buildRoomProviderModules } from "@/lib/provider-modules";
 import { resolveProviderCredentialsForOwner } from "@/lib/provider-keys";
 import { prisma } from "@/lib/prisma";
 
@@ -44,13 +46,26 @@ export function assertRoomNotEnded(status: RoomStatus) {
 
 export async function buildRoomRuntimeInfo(roomId: string, userId: string) {
   const room = await getAccessibleRoomOrThrow(roomId, userId);
-  const credentials = await resolveProviderCredentialsForOwner(room.createdById);
+  const owner = room.createdById
+    ? await prisma.user.findUnique({
+        where: { id: room.createdById },
+        select: { username: true },
+      })
+    : null;
+  const [voiceCredentials, llmRuntime] = await Promise.all([
+    resolveProviderCredentialsForOwner(room.createdById),
+    resolveConversationLlmRuntimeForOwner(room.createdById),
+  ]);
   const isCreator = room.createdById === userId;
+  const providers = buildRoomProviderModules(voiceCredentials, llmRuntime, owner?.username ?? null);
 
   return {
     room,
     isCreator,
     isEnded: room.status === RoomStatus.ENDED,
-    credentials,
+    voiceCredentials,
+    llmRuntime,
+    ownerUsername: owner?.username ?? null,
+    providers,
   };
 }

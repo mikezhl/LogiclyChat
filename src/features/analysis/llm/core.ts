@@ -1,6 +1,10 @@
+import {
+  type ConversationLlmProviderName,
+  resolveConversationLlmRuntimeForOwner,
+} from "@/lib/llm-provider-keys";
 import { MockConversationLlmProvider } from "./mock-llm";
+import { OpenAiCompatibleConversationLlmProvider } from "./openai-compatible-llm";
 import { resolvePromptTemplate } from "./prompts";
-import { RealConversationLlmProvider } from "./real-llm";
 import {
   ConversationLlmProvider,
   ConversationLlmJson,
@@ -8,21 +12,10 @@ import {
   SummaryConversationInput,
 } from "./types";
 
-type ConversationLlmProviderName = "mock" | "real";
-
 const providerRegistry: Record<ConversationLlmProviderName, ConversationLlmProvider> = {
   mock: new MockConversationLlmProvider(),
-  real: new RealConversationLlmProvider(),
+  "openai-compatible": new OpenAiCompatibleConversationLlmProvider(),
 };
-
-function resolveProviderName(): ConversationLlmProviderName {
-  const provider = process.env.CONVERSATION_LLM_PROVIDER?.trim().toLowerCase() ?? "mock";
-  if (provider === "mock" || provider === "real") {
-    return provider;
-  }
-
-  throw new Error(`Unsupported CONVERSATION_LLM_PROVIDER: ${provider}`);
-}
 
 function getRealtimePromptStyle() {
   return process.env.CONVERSATION_REALTIME_PROMPT_STYLE ?? "default";
@@ -32,33 +25,47 @@ function getSummaryPromptStyle() {
   return process.env.CONVERSATION_SUMMARY_PROMPT_STYLE ?? "default";
 }
 
-function getProvider(): ConversationLlmProvider {
-  const providerName = resolveProviderName();
+export function getConversationAnalysisPromptProfiles() {
+  return {
+    realtime: resolvePromptTemplate("realtime", getRealtimePromptStyle()).style,
+    summary: resolvePromptTemplate("summary", getSummaryPromptStyle()).style,
+  };
+}
+
+function getProvider(providerName: ConversationLlmProviderName): ConversationLlmProvider {
   return providerRegistry[providerName];
 }
 
 export async function invokeRealtimeConversationAnalysis(
   input: RealtimeConversationInput,
+  ownerUserId?: string | null,
 ): Promise<ConversationLlmJson> {
   const promptResolution = resolvePromptTemplate("realtime", getRealtimePromptStyle());
-  const provider = getProvider();
+  const runtime = await resolveConversationLlmRuntimeForOwner(ownerUserId);
+  const provider = getProvider(runtime.provider);
 
   return provider.invoke({
     mode: "realtime",
     style: promptResolution.style,
     prompt: promptResolution.prompt,
     input,
+    runtime,
   });
 }
 
-export async function invokeConversationSummary(input: SummaryConversationInput): Promise<ConversationLlmJson> {
+export async function invokeConversationSummary(
+  input: SummaryConversationInput,
+  ownerUserId?: string | null,
+): Promise<ConversationLlmJson> {
   const promptResolution = resolvePromptTemplate("summary", getSummaryPromptStyle());
-  const provider = getProvider();
+  const runtime = await resolveConversationLlmRuntimeForOwner(ownerUserId);
+  const provider = getProvider(runtime.provider);
 
   return provider.invoke({
     mode: "summary",
     style: promptResolution.style,
     prompt: promptResolution.prompt,
     input,
+    runtime,
   });
 }

@@ -36,6 +36,18 @@ type KeyStatusResponse = {
   error?: string;
 };
 
+type LlmKeyStatus = {
+  configured: boolean;
+  baseUrlMask: string | null;
+  apiKeyMask: string | null;
+  model: string | null;
+};
+
+type LlmKeyStatusResponse = {
+  status: LlmKeyStatus;
+  error?: string;
+};
+
 type AuthResponse = {
   user?: {
     id: string;
@@ -56,6 +68,7 @@ type DashboardPageClientProps = {
   initialCreatedRooms: RoomSummary[];
   initialJoinedRooms: RoomSummary[];
   initialKeyStatus: KeyStatus | null;
+  initialLlmKeyStatus: LlmKeyStatus | null;
   initialAuthMode: AuthMode | null;
   initialNextPath: string | null;
 };
@@ -103,6 +116,7 @@ export default function DashboardPageClient({
   initialCreatedRooms,
   initialJoinedRooms,
   initialKeyStatus,
+  initialLlmKeyStatus,
   initialAuthMode,
   initialNextPath,
 }: DashboardPageClientProps) {
@@ -129,6 +143,14 @@ export default function DashboardPageClient({
   });
   const [keyLoading, setKeyLoading] = useState(false);
   const [keyError, setKeyError] = useState("");
+  const [llmKeyStatus, setLlmKeyStatus] = useState<LlmKeyStatus | null>(initialLlmKeyStatus);
+  const [llmForm, setLlmForm] = useState({
+    baseUrl: "",
+    apiKey: "",
+    model: "",
+  });
+  const [llmLoading, setLlmLoading] = useState(false);
+  const [llmError, setLlmError] = useState("");
 
   const [authMode, setAuthMode] = useState<AuthMode | null>(initialAuthMode);
   const [authNextPath, setAuthNextPath] = useState<string | null>(normalizeNextPath(initialNextPath));
@@ -168,12 +190,19 @@ export default function DashboardPageClient({
     setCreatedRooms([]);
     setJoinedRooms([]);
     setKeyStatus(null);
+    setLlmKeyStatus(null);
     setKeyError("");
+    setLlmError("");
     setKeyForm({
       livekitUrl: "",
       livekitApiKey: "",
       livekitApiSecret: "",
       deepgramApiKey: "",
+    });
+    setLlmForm({
+      baseUrl: "",
+      apiKey: "",
+      model: "",
     });
   }
 
@@ -234,14 +263,33 @@ export default function DashboardPageClient({
     setKeyStatus(payload.status);
   }
 
+  async function refreshLlmKeyStatus() {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    const response = await fetch("/api/account/llm", { cache: "no-store" });
+    const payload = (await response.json()) as LlmKeyStatusResponse;
+    if (!response.ok) {
+      if (response.status === 401) {
+        clearDataAfterLogout();
+        openAuthModal("login");
+      }
+      throw new Error(payload.error ?? t("读取 LLM 状态失败", "Failed to read LLM status"));
+    }
+    setLlmKeyStatus(payload.status);
+  }
+
   async function loadAuthenticatedData() {
-    const [dashboardResponse, keyResponse] = await Promise.all([
+    const [dashboardResponse, keyResponse, llmResponse] = await Promise.all([
       fetch("/api/rooms/dashboard", { cache: "no-store" }),
       fetch("/api/account/keys", { cache: "no-store" }),
+      fetch("/api/account/llm", { cache: "no-store" }),
     ]);
 
     const dashboardPayload = (await dashboardResponse.json()) as DashboardResponse;
     const keyPayload = (await keyResponse.json()) as KeyStatusResponse;
+    const llmPayload = (await llmResponse.json()) as LlmKeyStatusResponse;
 
     if (!dashboardResponse.ok) {
       throw new Error(dashboardPayload.error ?? t("获取历史房间失败", "Failed to load room history"));
@@ -253,6 +301,10 @@ export default function DashboardPageClient({
     setCreatedRooms(dashboardPayload.createdRooms);
     setJoinedRooms(dashboardPayload.joinedRooms);
     setKeyStatus(keyPayload.status);
+    if (!llmResponse.ok) {
+      throw new Error(llmPayload.error ?? t("读取 LLM 状态失败", "Failed to read LLM status"));
+    }
+    setLlmKeyStatus(llmPayload.status);
   }
 
   async function bootstrapRoom(action: "create" | "join") {
@@ -452,6 +504,93 @@ export default function DashboardPageClient({
       setKeyError(error instanceof Error ? error.message : t("清空 Key 失败", "Failed to clear key"));
     } finally {
       setKeyLoading(false);
+    }
+  }
+
+  async function handleLlmSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!isAuthenticated) {
+      openAuthModal("login");
+      return;
+    }
+
+    if (isBlank(llmForm.baseUrl) || isBlank(llmForm.apiKey) || isBlank(llmForm.model)) {
+      setLlmError(
+        t(
+          "保存时必须同时填写 LLM URL、LLM API Key 和 LLM Model。清空请点击“清空”。",
+          'LLM URL, LLM API Key, and LLM Model are all required. Use "Clear" to remove saved keys.',
+        ),
+      );
+      return;
+    }
+
+    setLlmLoading(true);
+    setLlmError("");
+
+    try {
+      const response = await fetch("/api/account/llm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(llmForm),
+      });
+      const payload = (await response.json()) as LlmKeyStatusResponse;
+      if (!response.ok) {
+        if (response.status === 401) {
+          clearDataAfterLogout();
+          openAuthModal("login");
+        }
+        throw new Error(payload.error ?? t("保存 LLM 配置失败", "Failed to save LLM settings"));
+      }
+      setLlmKeyStatus(payload.status);
+      setLlmForm({
+        baseUrl: "",
+        apiKey: "",
+        model: "",
+      });
+    } catch (error) {
+      setLlmError(
+        error instanceof Error ? error.message : t("保存 LLM 配置失败", "Failed to save LLM settings"),
+      );
+    } finally {
+      setLlmLoading(false);
+    }
+  }
+
+  async function handleLlmClear() {
+    if (!isAuthenticated) {
+      openAuthModal("login");
+      return;
+    }
+
+    setLlmLoading(true);
+    setLlmError("");
+
+    try {
+      const response = await fetch("/api/account/llm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clear: true }),
+      });
+      const payload = (await response.json()) as LlmKeyStatusResponse;
+      if (!response.ok) {
+        if (response.status === 401) {
+          clearDataAfterLogout();
+          openAuthModal("login");
+        }
+        throw new Error(payload.error ?? t("清空 LLM 配置失败", "Failed to clear LLM settings"));
+      }
+      setLlmKeyStatus(payload.status);
+      setLlmForm({
+        baseUrl: "",
+        apiKey: "",
+        model: "",
+      });
+    } catch (error) {
+      setLlmError(
+        error instanceof Error ? error.message : t("清空 LLM 配置失败", "Failed to clear LLM settings"),
+      );
+    } finally {
+      setLlmLoading(false);
     }
   }
 
@@ -745,6 +884,92 @@ export default function DashboardPageClient({
                     </div>
                   </form>
                   {keyError ? <p className="form-error">{keyError}</p> : null}
+                </div>
+              )}
+            </details>
+            <details className="minimal-details">
+              <summary>{t("配置分析 LLM", "Configure Analysis LLM")}</summary>
+              {!isAuthenticated ? (
+                <div className="details-content">
+                  <p className="panel-tip">
+                    {t(
+                      "登录后可单独保存你自己的分析 LLM 配置。",
+                      "Sign in to store your own analysis LLM settings separately.",
+                    )}
+                  </p>
+                </div>
+              ) : (
+                <div className="details-content">
+                  <p className="panel-tip">
+                    {t("当前状态", "Current status")}:{" "}
+                    {llmKeyStatus?.configured ? t("已配置", "Configured") : t("未配置", "Not configured")}。
+                    {t(
+                      "这一组配置与 LiveKit/Deepgram 分开保存，仅在 `CONVERSATION_LLM_PROVIDER=openai-compatible` 时用于房间分析。",
+                      "This set is stored separately from LiveKit/Deepgram and is used for room analysis only when `CONVERSATION_LLM_PROVIDER=openai-compatible`.",
+                    )}
+                  </p>
+                  <div className="key-status-grid">
+                    <span>
+                      LLM URL: {llmKeyStatus?.baseUrlMask ?? t("未配置", "Not configured")}
+                    </span>
+                    <span>
+                      LLM API Key: {llmKeyStatus?.apiKeyMask ?? t("未配置", "Not configured")}
+                    </span>
+                    <span>
+                      LLM Model: {llmKeyStatus?.model ?? t("未配置", "Not configured")}
+                    </span>
+                  </div>
+                  <form className="key-form" onSubmit={handleLlmSave}>
+                    <input
+                      value={llmForm.baseUrl}
+                      onChange={(event) =>
+                        setLlmForm((current) => ({ ...current, baseUrl: event.target.value }))
+                      }
+                      placeholder={t(
+                        "CONVERSATION_LLM_OPENAI_BASE_URL（必填）",
+                        "CONVERSATION_LLM_OPENAI_BASE_URL (required)",
+                      )}
+                    />
+                    <input
+                      type="password"
+                      value={llmForm.apiKey}
+                      onChange={(event) =>
+                        setLlmForm((current) => ({ ...current, apiKey: event.target.value }))
+                      }
+                      placeholder="CONVERSATION_LLM_OPENAI_API_KEY"
+                    />
+                    <input
+                      value={llmForm.model}
+                      onChange={(event) =>
+                        setLlmForm((current) => ({ ...current, model: event.target.value }))
+                      }
+                      placeholder="CONVERSATION_LLM_OPENAI_MODEL"
+                    />
+                    <div className="key-form-actions">
+                      <button type="submit" className="primary-btn" disabled={llmLoading}>
+                        {llmLoading ? t("保存中...", "Saving...") : t("保存 LLM 配置", "Save LLM Settings")}
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-btn"
+                        disabled={llmLoading}
+                        onClick={() => void handleLlmClear()}
+                      >
+                        {t("清空", "Clear")}
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-btn"
+                        disabled={llmLoading}
+                        onClick={() =>
+                          void refreshLlmKeyStatus().catch((error) => setLlmError((error as Error).message))
+                        }
+                      >
+                        {t("刷新状态", "Refresh status")}
+                      </button>
+                    </div>
+                  </form>
+                  {llmError ? <p className="form-error">{llmError}</p> : null}
                 </div>
               )}
             </details>

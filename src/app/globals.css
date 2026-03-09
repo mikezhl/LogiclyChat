@@ -668,6 +668,16 @@ a:focus-visible {
   font-size: 0.95rem;
 }
 
+.room-meta-row {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .room-actions {
   display: flex;
   gap: 12px;
@@ -791,6 +801,76 @@ a:focus-visible {
 .room-status.transcription-status.disabled {
   background: var(--surface);
   color: var(--muted);
+}
+
+.room-status.provider-chip {
+  text-transform: none;
+  letter-spacing: 0.01em;
+  font-weight: 500;
+  cursor: default;
+}
+
+.provider-tooltip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.provider-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  z-index: 20;
+  min-width: 220px;
+  max-width: min(320px, 80vw);
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--line-strong) 55%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--card) 92%, white 8%);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(12px);
+  display: grid;
+  gap: 8px;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: opacity 90ms ease, transform 90ms ease, visibility 0s linear 90ms;
+  white-space: nowrap;
+}
+
+.provider-tooltip:hover .provider-popover,
+.provider-tooltip:focus-within .provider-popover {
+  visibility: visible;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 90ms ease, transform 90ms ease, visibility 0s;
+}
+
+.provider-popover-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--foreground);
+  letter-spacing: 0.01em;
+}
+
+.provider-popover-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.provider-popover-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.provider-popover-value {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--foreground);
+  text-align: right;
 }
 
 .room-error {

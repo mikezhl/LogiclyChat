@@ -7,7 +7,8 @@ A real-time AI debate/argument assist + analysis + summary platform, built with 
 - User registration/login, room create/join, real-time voice communication, and text transcription
 - Room creators can end a conversation; ended rooms become read-only (history visible, no more text/voice input)
 - User-owned LiveKit/Deepgram keys are supported and stored encrypted in PostgreSQL
-- Realtime AI analysis announcements and end-of-room AI summary (LLM mock provider by default)
+- User-owned OpenAI-compatible LLM settings are supported and stored separately for analysis
+- Realtime AI analysis announcements and end-of-room AI summary (`mock` or OpenAI-compatible provider)
 
 ## Environment Variables
 
@@ -16,15 +17,18 @@ Copy `.env.example` to `.env`, then fill values based on comments.
 Key settings:
 
 - `USER_PROVIDER_KEYS_MODE`: `false | true | full`
-  - `false`: only system/env keys are used, user keys are ignored
-  - `true`: user keys are preferred, fallback to system keys when missing
-  - `full`: only user keys are used, system keys are ignored
+  - `false`: only system/env keys are used, all user-saved credentials are ignored
+  - `true`: user keys are preferred per provider group, with system fallback when that group is missing
+  - `full`: only user keys are used, system keys are ignored for both voice and analysis
 - `LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET / DEEPGRAM_API_KEY`
-  - Used as system keys when `USER_PROVIDER_KEYS_MODE=false/true`
+  - Used as system keys for voice/transcription when `USER_PROVIDER_KEYS_MODE=false/true`
 - `APP_ENCRYPTION_SECRET`
   - Used to encrypt user keys; must be a strong random string
 - `CONVERSATION_LLM_PROVIDER`
-  - `mock | real` (default `mock`; `real` provider placeholder for future implementation)
+  - `mock | openai-compatible`
+- `CONVERSATION_LLM_OPENAI_BASE_URL / CONVERSATION_LLM_OPENAI_API_KEY / CONVERSATION_LLM_OPENAI_MODEL`
+  - Platform default analysis LLM config for `CONVERSATION_LLM_PROVIDER=openai-compatible`
+  - In `USER_PROVIDER_KEYS_MODE=true`, room owner LLM settings override these three fields independently from LiveKit/Deepgram
 - `CONVERSATION_REALTIME_PROMPT_STYLE / CONVERSATION_SUMMARY_PROMPT_STYLE`
   - Select prompt style profiles for realtime analysis and final summary modes
 

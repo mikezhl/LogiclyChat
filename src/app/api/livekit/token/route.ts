@@ -10,6 +10,8 @@ import {
 import { ensureTranscriberWorker } from "@/features/transcription/runtime/worker-manager";
 import { requireApiUser } from "@/lib/auth-guard";
 import { optionalEnv } from "@/lib/env";
+import { resolveConversationLlmRuntimeForOwner } from "@/lib/llm-provider-keys";
+import { buildRoomProviderModules } from "@/lib/provider-modules";
 import { resolveProviderCredentialsForOwner } from "@/lib/provider-keys";
 import { prisma } from "@/lib/prisma";
 import { RoomAccessError, getAccessibleRoomOrThrow } from "@/lib/rooms";
@@ -42,8 +44,17 @@ export async function POST(request: Request) {
     if (room.status === RoomStatus.ENDED) {
       return NextResponse.json({ error: "room has ended and voice is unavailable" }, { status: 403 });
     }
+    const owner = room.createdById
+      ? await prisma.user.findUnique({
+          where: { id: room.createdById },
+          select: { username: true },
+        })
+      : null;
 
-    const credentials = await resolveProviderCredentialsForOwner(room.createdById);
+    const [credentials, llmRuntime] = await Promise.all([
+      resolveProviderCredentialsForOwner(room.createdById),
+      resolveConversationLlmRuntimeForOwner(room.createdById),
+    ]);
     if (!credentials.livekitUrl || !credentials.livekitApiKey || !credentials.livekitApiSecret) {
       const mode = optionalEnv("USER_PROVIDER_KEYS_MODE") ?? "true";
       return NextResponse.json(
@@ -146,6 +157,7 @@ export async function POST(request: Request) {
     });
 
     const token = await accessToken.toJwt();
+    const providers = buildRoomProviderModules(credentials, llmRuntime, owner?.username ?? null);
 
     return NextResponse.json({
       token,
@@ -154,14 +166,7 @@ export async function POST(request: Request) {
       displayName: user.username,
       transcriberEnabled: isVoiceMode ? transcriberEnabled : false,
       connectionMode,
-      keyMasks: {
-        livekit: credentials.livekitApiKeyMask,
-        deepgram: credentials.deepgramApiKeyMask,
-      },
-      keySources: {
-        livekit: credentials.livekitSource,
-        deepgram: credentials.deepgramSource,
-      },
+      providers,
     });
   } catch (error) {
     if (error instanceof RoomAccessError) {

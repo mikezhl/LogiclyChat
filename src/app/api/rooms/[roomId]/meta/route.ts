@@ -33,14 +33,7 @@ export async function GET(_request: Request, context: RouteContext) {
         endedAt: runtimeInfo.room.endedAt?.toISOString() ?? null,
         isCreator: runtimeInfo.isCreator,
       },
-      keyMasks: {
-        livekit: runtimeInfo.credentials.livekitApiKeyMask,
-        deepgram: runtimeInfo.credentials.deepgramApiKeyMask,
-      },
-      keySources: {
-        livekit: runtimeInfo.credentials.livekitSource,
-        deepgram: runtimeInfo.credentials.deepgramSource,
-      },
+      providers: runtimeInfo.providers,
     });
   } catch (error) {
     if (error instanceof RoomAccessError) {

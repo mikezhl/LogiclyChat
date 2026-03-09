@@ -15,13 +15,37 @@ type TokenResponse = {
   identity: string;
   displayName: string;
   transcriberEnabled: boolean;
-  keyMasks: {
-    livekit: string | null;
-    deepgram: string | null;
-  };
-  keySources: {
-    livekit: "user" | "system" | "unavailable";
-    deepgram: "user" | "system" | "unavailable";
+  providers: {
+    voice: {
+      providedBy: {
+        kind: "platform" | "user" | "builtin" | "unavailable";
+        username: string | null;
+      };
+      transportProvider: string;
+      transportSource: "user" | "system" | "unavailable";
+      transportCredentialMask: string | null;
+      transportReady: boolean;
+      transcriptionEnabled: boolean;
+      transcriptionProvider: string | null;
+      transcriptionSource: "user" | "system" | "unavailable";
+      transcriptionCredentialMask: string | null;
+      transcriptionReady: boolean;
+    };
+    analysis: {
+      providedBy: {
+        kind: "platform" | "user" | "builtin" | "unavailable";
+        username: string | null;
+      };
+      provider: string;
+      source: "user" | "system" | "unavailable" | "builtin";
+      credentialMask: string | null;
+      model: string | null;
+      ready: boolean;
+      profiles: {
+        realtime: string;
+        summary: string;
+      };
+    };
   };
   error?: string;
 };
@@ -38,13 +62,37 @@ type RoomMetaResponse = {
     endedAt: string | null;
     isCreator: boolean;
   };
-  keyMasks: {
-    livekit: string | null;
-    deepgram: string | null;
-  };
-  keySources: {
-    livekit: "user" | "system" | "unavailable";
-    deepgram: "user" | "system" | "unavailable";
+  providers: {
+    voice: {
+      providedBy: {
+        kind: "platform" | "user" | "builtin" | "unavailable";
+        username: string | null;
+      };
+      transportProvider: string;
+      transportSource: "user" | "system" | "unavailable";
+      transportCredentialMask: string | null;
+      transportReady: boolean;
+      transcriptionEnabled: boolean;
+      transcriptionProvider: string | null;
+      transcriptionSource: "user" | "system" | "unavailable";
+      transcriptionCredentialMask: string | null;
+      transcriptionReady: boolean;
+    };
+    analysis: {
+      providedBy: {
+        kind: "platform" | "user" | "builtin" | "unavailable";
+        username: string | null;
+      };
+      provider: string;
+      source: "user" | "system" | "unavailable" | "builtin";
+      credentialMask: string | null;
+      model: string | null;
+      ready: boolean;
+      profiles: {
+        realtime: string;
+        summary: string;
+      };
+    };
   };
   error?: string;
 };
@@ -60,13 +108,37 @@ type RoomMetaState = {
   status: "ACTIVE" | "ENDED";
   endedAt: string | null;
   isCreator: boolean;
-  keyMasks: {
-    livekit: string | null;
-    deepgram: string | null;
-  };
-  keySources: {
-    livekit: "user" | "system" | "unavailable";
-    deepgram: "user" | "system" | "unavailable";
+  providers: {
+    voice: {
+      providedBy: {
+        kind: "platform" | "user" | "builtin" | "unavailable";
+        username: string | null;
+      };
+      transportProvider: string;
+      transportSource: "user" | "system" | "unavailable";
+      transportCredentialMask: string | null;
+      transportReady: boolean;
+      transcriptionEnabled: boolean;
+      transcriptionProvider: string | null;
+      transcriptionSource: "user" | "system" | "unavailable";
+      transcriptionCredentialMask: string | null;
+      transcriptionReady: boolean;
+    };
+    analysis: {
+      providedBy: {
+        kind: "platform" | "user" | "builtin" | "unavailable";
+        username: string | null;
+      };
+      provider: string;
+      source: "user" | "system" | "unavailable" | "builtin";
+      credentialMask: string | null;
+      model: string | null;
+      ready: boolean;
+      profiles: {
+        realtime: string;
+        summary: string;
+      };
+    };
   };
 };
 
@@ -128,6 +200,103 @@ function isOwnMessage(message: ChatMessage, participantId: string, username: str
   return false;
 }
 
+function formatProviderName(value: string, language: UiLanguage) {
+  if (!value) {
+    return language === "zh" ? "未配置" : "Not configured";
+  }
+
+  if (value === "mock") {
+    return "Mock";
+  }
+
+  return value;
+}
+
+function formatProviderOwner(
+  owner: RoomMetaState["providers"]["voice"]["providedBy"],
+  language: UiLanguage,
+) {
+  if (owner.kind === "user") {
+    return owner.username ?? (language === "zh" ? "用户" : "User");
+  }
+  if (owner.kind === "platform" || owner.kind === "builtin") {
+    return language === "zh" ? "平台" : "Platform";
+  }
+
+  return language === "zh" ? "未配置" : "Unavailable";
+}
+
+function formatProviderValue(
+  value: string | null | undefined,
+  language: UiLanguage,
+) {
+  if (value && value.trim().length > 0) {
+    return value;
+  }
+
+  return language === "zh" ? "未设置" : "Not set";
+}
+
+function getVoiceProviderLabel(voice: RoomMetaState["providers"]["voice"], language: UiLanguage) {
+  return formatProviderOwner(voice.providedBy, language);
+}
+
+function getAnalysisProviderLabel(
+  analysis: RoomMetaState["providers"]["analysis"],
+  language: UiLanguage,
+) {
+  return formatProviderOwner(analysis.providedBy, language);
+}
+
+function getVoiceProviderDetails(
+  voice: RoomMetaState["providers"]["voice"],
+  language: UiLanguage,
+) {
+  return [
+    {
+      label: language === "zh" ? "语音通道" : "Voice transport",
+      value: formatProviderName(voice.transportProvider, language),
+    },
+    {
+      label: language === "zh" ? "转录引擎" : "Transcription",
+      value: voice.transcriptionEnabled
+        ? formatProviderName(voice.transcriptionProvider ?? "", language)
+        : language === "zh"
+          ? "已关闭"
+          : "Disabled",
+    },
+  ];
+}
+
+function getAnalysisProviderDetails(
+  analysis: RoomMetaState["providers"]["analysis"],
+  language: UiLanguage,
+) {
+  const details = [
+    {
+      label: language === "zh" ? "实现" : "Implementation",
+      value: formatProviderName(analysis.provider, language),
+    },
+    {
+      label: language === "zh" ? "实时 Profile" : "Realtime profile",
+      value: analysis.profiles.realtime,
+    },
+    {
+      label: language === "zh" ? "总结 Profile" : "Summary profile",
+      value: analysis.profiles.summary,
+    },
+  ];
+
+  if (analysis.model) {
+    details.push({
+      label: language === "zh" ? "模型" : "Model",
+      value: formatProviderValue(analysis.model, language),
+    });
+  }
+
+  return details;
+}
+
 export default function RoomPageClient({ roomId, username }: RoomPageClientProps) {
   const { language } = useUiLanguage();
   const isZh = language === "zh";
@@ -145,8 +314,38 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
     status: "ACTIVE",
     endedAt: null,
     isCreator: false,
-    keyMasks: { livekit: null, deepgram: null },
-    keySources: { livekit: "system", deepgram: "system" },
+    providers: {
+      voice: {
+        providedBy: {
+          kind: "platform",
+          username: null,
+        },
+        transportProvider: "livekit",
+        transportSource: "system",
+        transportCredentialMask: null,
+        transportReady: true,
+        transcriptionEnabled: true,
+        transcriptionProvider: "deepgram",
+        transcriptionSource: "system",
+        transcriptionCredentialMask: null,
+        transcriptionReady: true,
+      },
+      analysis: {
+        providedBy: {
+          kind: "platform",
+          username: null,
+        },
+        provider: "mock",
+        source: "builtin",
+        credentialMask: null,
+        model: null,
+        ready: true,
+        profiles: {
+          realtime: "default",
+          summary: "default",
+        },
+      },
+    },
   });
   const [connectionState, setConnectionState] = useState<
     "disconnected" | "connecting" | "connected"
@@ -209,8 +408,7 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
       status: payload.room.status,
       endedAt: payload.room.endedAt,
       isCreator: payload.room.isCreator,
-      keyMasks: payload.keyMasks,
-      keySources: payload.keySources,
+      providers: payload.providers,
     });
   }, [roomId, t]);
 
@@ -263,8 +461,7 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
 
       setRoomMeta((current) => ({
         ...current,
-        keyMasks: tokenPayload.keyMasks,
-        keySources: tokenPayload.keySources,
+        providers: tokenPayload.providers,
       }));
 
       const room = new Room({
@@ -371,8 +568,7 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
 
     setRoomMeta((current) => ({
       ...current,
-      keyMasks: tokenPayload.keyMasks,
-      keySources: tokenPayload.keySources,
+      providers: tokenPayload.providers,
     }));
 
     if (!tokenPayload.transcriberEnabled) {
@@ -587,7 +783,7 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
                       : t("未转录", "Not Transcribing")}
               </span>
             </div>
-            <p style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', margin: '8px 0 0', color: 'var(--muted)', fontSize: '0.9rem' }}>
+            <div className="room-meta-row">
               <span>@{username}</span>
               {isEnded && (
                 <>
@@ -598,15 +794,39 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
                 </>
               )}
               <span style={{ color: 'var(--line-strong)' }}>|</span>
-              <span
-                title={`LiveKit: ${roomMeta.keySources.livekit === "user" ? t("用户 Key", "User key") : t("平台默认", "Platform default")}\nDeepgram: ${roomMeta.keySources.deepgram === "user" ? t("用户 Key", "User key") : t("平台默认", "Platform default")}`}
-              >
-                {t("鉴权", "Auth")}:{" "}
-                {roomMeta.keySources.livekit === "user" || roomMeta.keySources.deepgram === "user"
-                  ? t("自备 Key", "Own key")
-                  : t("平台默认", "Platform default")}
-              </span>
-            </p>
+              <div className="provider-tooltip">
+                <div className="room-status provider-chip" tabIndex={0}>
+                  {t("语音与转录提供者", "Voice Provider")}: {getVoiceProviderLabel(roomMeta.providers.voice, language)}
+                </div>
+                <div className="provider-popover" role="tooltip">
+                  <div className="provider-popover-title">
+                    {t("语音与转录", "Voice & Transcription")}
+                  </div>
+                  {getVoiceProviderDetails(roomMeta.providers.voice, language).map((item) => (
+                    <div key={`voice-${item.label}`} className="provider-popover-row">
+                      <span className="provider-popover-label">{item.label}</span>
+                      <strong className="provider-popover-value">{item.value}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="provider-tooltip">
+                <div className="room-status provider-chip" tabIndex={0}>
+                  {t("分析模块提供者", "Analysis Provider")}: {getAnalysisProviderLabel(roomMeta.providers.analysis, language)}
+                </div>
+                <div className="provider-popover" role="tooltip">
+                  <div className="provider-popover-title">
+                    {t("分析模块", "Analysis")}
+                  </div>
+                  {getAnalysisProviderDetails(roomMeta.providers.analysis, language).map((item) => (
+                    <div key={`analysis-${item.label}`} className="provider-popover-row">
+                      <span className="provider-popover-label">{item.label}</span>
+                      <strong className="provider-popover-value">{item.value}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
           <div className="room-actions">
             <Link className="text-link-button" style={{ height: '40px' }} href="/">

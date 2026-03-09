@@ -1,5 +1,6 @@
 import DashboardPageClient from "@/components/dashboard-page-client";
 import { getCurrentUser } from "@/lib/auth";
+import { getUserLlmKeyStatus } from "@/lib/llm-provider-keys";
 import { getUserKeyStatus } from "@/lib/provider-keys";
 import { prisma } from "@/lib/prisma";
 
@@ -63,13 +64,14 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         initialCreatedRooms={[]}
         initialJoinedRooms={[]}
         initialKeyStatus={null}
+        initialLlmKeyStatus={null}
         initialAuthMode={initialAuthMode}
         initialNextPath={initialNextPath}
       />
     );
   }
 
-  const [createdRooms, joinedRooms, keyStatus] = await Promise.all([
+  const [createdRooms, joinedRooms, keyStatus, llmKeyStatus] = await Promise.all([
     prisma.room.findMany({
       where: {
         createdById: user.id,
@@ -112,6 +114,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       },
     }),
     getUserKeyStatus(user.id),
+    getUserLlmKeyStatus(user.id),
   ]);
 
   return (
@@ -126,6 +129,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         joinedAt: entry.joinedAt.toISOString(),
       }))}
       initialKeyStatus={keyStatus}
+      initialLlmKeyStatus={llmKeyStatus}
       initialAuthMode={initialAuthMode}
       initialNextPath={initialNextPath}
     />

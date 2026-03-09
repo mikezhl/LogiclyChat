@@ -1,3 +1,5 @@
+import type { ResolvedConversationLlmRuntime } from "@/lib/llm-provider-keys";
+
 export type RealtimeConversationInput = {
   roomId: string;
   speakerMap: Record<string, string>;
@@ -16,6 +18,7 @@ export type RealtimeConversationLlmInvocation = {
   style: string;
   prompt: string;
   input: RealtimeConversationInput;
+  runtime: ResolvedConversationLlmRuntime;
 };
 
 export type SummaryConversationLlmInvocation = {
@@ -23,6 +26,7 @@ export type SummaryConversationLlmInvocation = {
   style: string;
   prompt: string;
   input: SummaryConversationInput;
+  runtime: ResolvedConversationLlmRuntime;
 };
 
 export type ConversationLlmInvocation =

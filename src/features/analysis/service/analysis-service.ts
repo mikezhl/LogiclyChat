@@ -125,7 +125,7 @@ export async function executeRealtimeAnalysisForRoomRef(roomRefId: string): Prom
     speakerMap: compacted.speakerMap,
     historyConversation: compacted.historyConversation,
     currentRoundConversation: compacted.currentRoundConversation,
-  });
+  }, room.createdById);
 
   const externalRef = `analysis:realtime:${roomRefId}:${compacted.latestCurrentMessageId}`;
   const content = JSON.stringify(llmResult, null, 2);
@@ -220,7 +220,7 @@ export async function executeFinalSummaryForRoomRef(roomRefId: string): Promise<
     roomId: room.roomId,
     speakerMap: compacted.speakerMap,
     fullConversation: compacted.fullConversation,
-  });
+  }, room.createdById);
 
   const externalRef = `analysis:summary:${roomRefId}`;
   const content = JSON.stringify(llmResult, null, 2);
