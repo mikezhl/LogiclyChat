@@ -18,11 +18,11 @@ const providerRegistry: Record<ConversationLlmProviderName, ConversationLlmProvi
 };
 
 function getRealtimePromptStyle() {
-  return process.env.CONVERSATION_REALTIME_PROMPT_STYLE ?? "default";
+  return process.env.CONVERSATION_REALTIME_PROMPT_STYLE ?? "default_cn";
 }
 
 function getSummaryPromptStyle() {
-  return process.env.CONVERSATION_SUMMARY_PROMPT_STYLE ?? "default";
+  return process.env.CONVERSATION_SUMMARY_PROMPT_STYLE ?? "default_cn";
 }
 
 export function getConversationAnalysisPromptProfiles() {

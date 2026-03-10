@@ -171,7 +171,9 @@ a:focus-visible {
 .modal-auth-form input,
 .auth-card input,
 .room-chat-form input,
-.chat-form input {
+.chat-form input,
+.room-chat-form textarea,
+.chat-form textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -191,7 +193,9 @@ a:focus-visible {
 .modal-auth-form input:focus,
 .auth-card input:focus,
 .room-chat-form input:focus,
-.chat-form input:focus {
+.chat-form input:focus,
+.room-chat-form textarea:focus,
+.chat-form textarea:focus {
   background: var(--card);
   border-color: var(--primary);
   outline: none;
@@ -201,7 +205,9 @@ a:focus-visible {
 .key-form input::placeholder,
 .modal-auth-form input::placeholder,
 .room-chat-form input::placeholder,
-.chat-form input::placeholder {
+.chat-form input::placeholder,
+.room-chat-form textarea::placeholder,
+.chat-form textarea::placeholder {
   color: var(--muted);
 }
 
@@ -1046,10 +1052,21 @@ a:focus-visible {
   display: flex;
   gap: 12px;
   flex-shrink: 0;
+  align-items: flex-end;
 }
 
 .chat-form.room-chat-form input {
   flex: 1;
+}
+
+.chat-form.room-chat-form textarea {
+  flex: 1;
+  resize: none;
+  min-height: 48px;
+  max-height: 168px;
+  height: 48px;
+  padding: 12px 16px;
+  line-height: 1.5;
 }
 
 .chat-form.room-chat-form button {

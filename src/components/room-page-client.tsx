@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ParticipantKind, Room, RoomEvent, Track } from "livekit-client";
 
@@ -341,8 +341,8 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
         model: null,
         ready: true,
         profiles: {
-          realtime: "default",
-          summary: "default",
+          realtime: "default_cn",
+          summary: "default_cn",
         },
       },
     },
@@ -358,6 +358,7 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
   const [sendingText, setSendingText] = useState(false);
   const [endingRoom, setEndingRoom] = useState(false);
   const [transcriptionState, setTranscriptionState] = useState<TranscriptionState>("idle");
+  const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const markTranscriptionReady = useCallback(() => {
     setTranscriptionState((current) => {
@@ -666,6 +667,19 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
     }
   }
 
+  function handleChatInputKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
+      return;
+    }
+
+    event.preventDefault();
+    if (sendingText || roomMeta.status === "ENDED") {
+      return;
+    }
+
+    event.currentTarget.form?.requestSubmit();
+  }
+
   useEffect(() => {
     autoConnectAttemptedRef.current = false;
     latestMessageCreatedAtRef.current = null;
@@ -700,6 +714,18 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
   useEffect(() => {
     scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    const input = chatInputRef.current;
+    if (!input) {
+      return;
+    }
+
+    const maxHeight = 168;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, maxHeight)}px`;
+    input.style.overflowY = input.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [chatInput]);
 
   useEffect(() => {
     if (connectionState !== "connected" || transcriptionState !== "starting") {
@@ -888,15 +914,18 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
         </section>
 
         <form className="chat-form room-chat-form" onSubmit={submitTextMessage}>
-          <input
+          <textarea
+            ref={chatInputRef}
             value={chatInput}
             onChange={(event) => setChatInput(event.target.value)}
+            onKeyDown={handleChatInputKeyDown}
             placeholder={
               isEnded
                 ? t("房间已结束，仅可查看历史记录", "This room has ended and is now read-only")
                 : t("输入消息...", "Type a message...")
             }
             disabled={isEnded}
+            rows={1}
           />
           <button type="submit" className="primary-btn" disabled={sendingText || isEnded}>
             {sendingText ? t("发送中", "Sending") : t("发送", "Send")}

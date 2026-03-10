@@ -31,6 +31,7 @@ Key settings:
   - In `USER_PROVIDER_KEYS_MODE=true`, room owner LLM settings override these three fields independently from LiveKit/Deepgram
 - `CONVERSATION_REALTIME_PROMPT_STYLE / CONVERSATION_SUMMARY_PROMPT_STYLE`
   - Select prompt style profiles for realtime analysis and final summary modes
+  - Current supported value: `default_cn`
 
 ## Local Development
 
