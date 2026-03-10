@@ -9,13 +9,14 @@ import {
 } from "@/features/transcription/service/livekit-dispatch";
 import { ensureTranscriberWorker } from "@/features/transcription/runtime/worker-manager";
 import { requireApiUser } from "@/lib/auth-guard";
-import { optionalEnv } from "@/lib/env";
+import { isRoomSpeakerSwitchEnabled, optionalEnv } from "@/lib/env";
 import { resolveConversationLlmRuntimeForOwner } from "@/lib/llm-provider-keys";
 import { buildRoomProviderModules } from "@/lib/provider-modules";
 import { resolveProviderCredentialsForOwner } from "@/lib/provider-keys";
 import { prisma } from "@/lib/prisma";
 import { assertRoomOwnerActiveOrThrow } from "@/lib/room-presence";
 import { RoomAccessError, getAccessibleRoomOrThrow } from "@/lib/rooms";
+import { buildRoomSpeakerProfile, resolveRoomSpeakerMode } from "@/lib/room-speaker";
 import { normalizeRoomId } from "@/lib/room-utils";
 
 export const runtime = "nodejs";
@@ -23,6 +24,7 @@ export const runtime = "nodejs";
 type TokenRequest = {
   roomId?: string;
   connectionMode?: "data" | "voice";
+  speakerMode?: string;
 };
 
 export async function POST(request: Request) {
@@ -36,9 +38,14 @@ export async function POST(request: Request) {
     const roomId = normalizeRoomId(body?.roomId);
     const connectionMode = body?.connectionMode === "data" ? "data" : "voice";
     const isVoiceMode = connectionMode === "voice";
+    const speakerMode = resolveRoomSpeakerMode(body?.speakerMode);
 
     if (!roomId) {
       return NextResponse.json({ error: "roomId is required" }, { status: 400 });
+    }
+
+    if (speakerMode === "bot" && !isRoomSpeakerSwitchEnabled()) {
+      return NextResponse.json({ error: "room speaker switch is disabled" }, { status: 403 });
     }
 
     const room = await getAccessibleRoomOrThrow(roomId, user.id);
@@ -144,10 +151,14 @@ export async function POST(request: Request) {
       }
     }
 
-    const identity = `user-${user.id}`;
+    const speakerProfile = buildRoomSpeakerProfile({
+      userId: user.id,
+      username: user.username,
+      mode: speakerMode,
+    });
     const accessToken = new AccessToken(credentials.livekitApiKey, credentials.livekitApiSecret, {
-      identity,
-      name: user.username,
+      identity: speakerProfile.participantIdentity,
+      name: speakerProfile.displayName,
       ttl: "4h",
     });
 
@@ -165,8 +176,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       token,
       livekitUrl: credentials.livekitUrl,
-      identity,
-      displayName: user.username,
+      identity: speakerProfile.participantIdentity,
+      displayName: speakerProfile.displayName,
       transcriberEnabled: isVoiceMode ? transcriberEnabled : false,
       connectionMode,
       providers,

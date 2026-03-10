@@ -9,6 +9,7 @@ A real-time AI debate/argument assist + analysis + summary platform, built with 
 - User-owned LiveKit/Deepgram keys are supported and stored encrypted in PostgreSQL
 - User-owned OpenAI-compatible LLM settings are supported and stored separately for analysis
 - Realtime AI analysis announcements and end-of-room AI summary (`mock` or OpenAI-compatible provider)
+- Optional single-device speaker switch mode for self debate: toggle between `username` and `usernameBot` inside one room
 
 ## Environment Variables
 
@@ -22,6 +23,9 @@ Key settings:
   - `full`: only user keys are used, system keys are ignored for both voice and analysis
 - `LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET / DEEPGRAM_API_KEY`
   - Used as system keys for voice/transcription when `USER_PROVIDER_KEYS_MODE=false/true`
+- `ROOM_SPEAKER_SWITCH_ENABLED`
+  - `false`: disable single-device speaker switching
+  - `true`: allow switching a room speaker between `username` and `usernameBot`
 - `APP_ENCRYPTION_SECRET`
   - Used to encrypt user keys; must be a strong random string
 - `CONVERSATION_LLM_PROVIDER`

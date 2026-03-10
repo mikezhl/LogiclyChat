@@ -9,10 +9,12 @@ import {
 } from "@/features/analysis/service/analysis-errors";
 import { ensureConversationAnalysisWorker } from "@/features/analysis/runtime/worker-manager";
 import { requireApiUser } from "@/lib/auth-guard";
+import { isRoomSpeakerSwitchEnabled } from "@/lib/env";
 import { toChatMessage } from "@/lib/messages";
 import { prisma } from "@/lib/prisma";
 import { assertRoomOwnerActiveOrThrow } from "@/lib/room-presence";
 import { RoomAccessError, assertRoomNotEnded, getAccessibleRoomOrThrow } from "@/lib/rooms";
+import { buildRoomSpeakerProfile, resolveRoomSpeakerMode } from "@/lib/room-speaker";
 import { normalizeDisplayName, normalizeRoomId } from "@/lib/room-utils";
 
 export const runtime = "nodejs";
@@ -33,6 +35,7 @@ type IncomingTranscriptionSegment = {
 type SaveTranscriptionRequest = {
   participantId?: string;
   participantName?: string;
+  speakerMode?: string;
   segments?: IncomingTranscriptionSegment[];
 };
 
@@ -59,8 +62,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const body = (await request.json()) as SaveTranscriptionRequest;
-    const participantId = body.participantId?.trim() || undefined;
-    const senderName = normalizeDisplayName(body.participantName);
+    const speakerMode = body?.speakerMode == null ? null : resolveRoomSpeakerMode(body.speakerMode);
     const segments = (body.segments ?? []).filter(
       (segment): segment is IncomingTranscriptionSegment =>
         typeof segment?.text === "string" && segment.text.trim().length > 0,
@@ -73,6 +75,19 @@ export async function POST(request: Request, context: RouteContext) {
     const room = await getAccessibleRoomOrThrow(roomId, user.id);
     assertRoomNotEnded(room.status);
     await assertRoomOwnerActiveOrThrow(room, user.id);
+    if (speakerMode === "bot" && !isRoomSpeakerSwitchEnabled()) {
+      return NextResponse.json({ error: "room speaker switch is disabled" }, { status: 403 });
+    }
+    const speakerProfile =
+      speakerMode === null
+        ? null
+        : buildRoomSpeakerProfile({
+            userId: user.id,
+            username: user.username,
+            mode: speakerMode,
+          });
+    const participantId = speakerProfile?.participantIdentity ?? body.participantId?.trim() ?? undefined;
+    const senderName = speakerProfile?.displayName ?? normalizeDisplayName(body.participantName);
     const persisted = [];
 
     void ensureConversationAnalysisWorker({
@@ -104,6 +119,7 @@ export async function POST(request: Request, context: RouteContext) {
             roomRefId: room.id,
             type: MessageType.TRANSCRIPT,
             senderName,
+            senderUserId: speakerProfile?.senderUserId ?? null,
             participantId: participantId ?? null,
             content,
             externalRef,
@@ -111,6 +127,7 @@ export async function POST(request: Request, context: RouteContext) {
           update: {
             content,
             senderName,
+            senderUserId: speakerProfile?.senderUserId ?? null,
             participantId: participantId ?? null,
           },
         });
@@ -140,6 +157,7 @@ export async function POST(request: Request, context: RouteContext) {
             roomRefId: room.id,
             type: MessageType.TRANSCRIPT,
             senderName,
+            senderUserId: speakerProfile?.senderUserId ?? null,
             participantId: participantId ?? null,
             content,
           },

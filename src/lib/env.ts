@@ -10,7 +10,8 @@ type EnvKey =
   | "CONVERSATION_LLM_OPENAI_MODEL"
   | "APP_ENCRYPTION_SECRET"
   | "SESSION_TTL_HOURS"
-  | "USER_PROVIDER_KEYS_MODE";
+  | "USER_PROVIDER_KEYS_MODE"
+  | "ROOM_SPEAKER_SWITCH_ENABLED";
 
 export type UserProviderKeysMode = "false" | "true" | "full";
 
@@ -35,4 +36,9 @@ export function getUserProviderKeysMode(): UserProviderKeysMode {
   }
 
   return "true";
+}
+
+export function isRoomSpeakerSwitchEnabled(): boolean {
+  const raw = optionalEnv("ROOM_SPEAKER_SWITCH_ENABLED")?.toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }

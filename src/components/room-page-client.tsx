@@ -6,6 +6,7 @@ import { Room, RoomEvent, Track } from "livekit-client";
 
 import { ChatMessage } from "@/lib/chat-types";
 import { decodeLivekitChatMessageEvent, LIVEKIT_CHAT_MESSAGE_TOPIC } from "@/lib/livekit-chat-event";
+import { getRoomSpeakerDisplayName, type RoomSpeakerMode } from "@/lib/room-speaker";
 import { useUiLanguage } from "@/lib/use-ui-language";
 import { toDateLocale, type UiLanguage } from "@/lib/ui-language";
 
@@ -99,6 +100,9 @@ type RoomMetaResponse = {
       };
     };
   };
+  features: {
+    speakerSwitchEnabled: boolean;
+  };
   error?: string;
 };
 
@@ -149,6 +153,9 @@ type RoomMetaState = {
         summary: string;
       };
     };
+  };
+  features: {
+    speakerSwitchEnabled: boolean;
   };
 };
 
@@ -203,20 +210,12 @@ function mergeMessages(existing: ChatMessage[], incoming: ChatMessage[]) {
   );
 }
 
-function isOwnMessage(message: ChatMessage, participantId: string, username: string) {
+function isOwnMessage(message: ChatMessage, username: string) {
   if (message.type === "analysis" || message.type === "summary") {
     return false;
   }
 
-  if (message.senderName === username) {
-    return true;
-  }
-
-  if (participantId && message.participantId) {
-    return message.participantId === participantId;
-  }
-
-  return false;
+  return message.senderName === username;
 }
 
 function formatProviderName(value: string, language: UiLanguage) {
@@ -392,6 +391,9 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
         },
       },
     },
+    features: {
+      speakerSwitchEnabled: false,
+    },
   });
   const [connectionState, setConnectionState] = useState<
     "disconnected" | "connecting" | "connected"
@@ -403,12 +405,16 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
   const [roomError, setRoomError] = useState("");
   const [sendingText, setSendingText] = useState(false);
   const [endingRoom, setEndingRoom] = useState(false);
+  const [speakerMode, setSpeakerMode] = useState<RoomSpeakerMode>("self");
+  const [speakerSwitchPending, setSpeakerSwitchPending] = useState(false);
   const [transcriptionState, setTranscriptionState] = useState<TranscriptionState>("idle");
   const [hasAutoConnectAttempted, setHasAutoConnectAttempted] = useState(false);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const voiceProviderRef = useRef(roomMeta.providers.voice);
   const micEnabledRef = useRef(false);
   const participantIdentityRef = useRef("");
+  const speakerModeRef = useRef<RoomSpeakerMode>("self");
+  const pendingVoiceRestartAfterSpeakerSwitchRef = useRef(false);
   const voiceCallStartingRef = useRef(false);
   const transcriptionRuntimeReadyRef = useRef(false);
   const previousOwnerActiveRef = useRef(false);
@@ -582,6 +588,7 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
       isCreator: payload.room.isCreator,
       ownerPresence: payload.room.ownerPresence,
       providers: payload.providers,
+      features: payload.features,
     });
   }, [roomId, t]);
 
@@ -628,6 +635,7 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
         body: JSON.stringify({
           roomId,
           connectionMode: "data",
+          speakerMode: speakerModeRef.current,
         }),
       });
       const tokenPayload = (await tokenRes.json()) as TokenResponse;
@@ -752,6 +760,8 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
       void fetchMessages(latestMessageCreatedAtRef.current).catch(() => undefined);
     } catch (error) {
       room?.disconnect();
+      pendingVoiceRestartAfterSpeakerSwitchRef.current = false;
+      setSpeakerSwitchPending(false);
       setRoomError(error instanceof Error ? error.message : t("连接房间失败", "Failed to connect room"));
       disconnectRoom();
     }
@@ -778,6 +788,7 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
       body: JSON.stringify({
         roomId,
         connectionMode: "voice",
+        speakerMode: speakerModeRef.current,
       }),
     });
     const tokenPayload = (await tokenRes.json()) as TokenResponse;
@@ -884,6 +895,44 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
     t,
   ]);
 
+  async function switchSpeakerMode() {
+    if (
+      !roomMeta.features.speakerSwitchEnabled ||
+      speakerSwitchPending ||
+      roomMeta.status === "ENDED"
+    ) {
+      return;
+    }
+
+    const nextSpeakerMode: RoomSpeakerMode = speakerModeRef.current === "self" ? "bot" : "self";
+    const shouldReconnect = Boolean(roomRef.current) || connectionState !== "disconnected";
+    const shouldResumeVoice = micEnabledRef.current;
+
+    setRoomError("");
+    setSpeakerMode(nextSpeakerMode);
+
+    if (!shouldReconnect) {
+      return;
+    }
+
+    setSpeakerSwitchPending(true);
+    pendingVoiceRestartAfterSpeakerSwitchRef.current = shouldResumeVoice;
+
+    if (shouldResumeVoice && roomRef.current) {
+      try {
+        voiceCallStartingRef.current = false;
+        transcriptionRuntimeReadyRef.current = false;
+        await disableLocalMicrophone(roomRef.current);
+        await releaseVoiceRuntimeIfIdle();
+      } catch {
+        // Best-effort cleanup before reconnecting under the other speaker identity.
+      }
+    }
+
+    setHasAutoConnectAttempted(false);
+    disconnectRoom();
+  }
+
   async function endConversation() {
     if (!roomMeta.isCreator || roomMeta.status === "ENDED") {
       return;
@@ -941,8 +990,8 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          participantId,
           content,
+          speakerMode: speakerModeRef.current,
         }),
       });
 
@@ -1003,6 +1052,10 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
   }, [participantId]);
 
   useEffect(() => {
+    speakerModeRef.current = speakerMode;
+  }, [speakerMode]);
+
+  useEffect(() => {
     voiceProviderRef.current = roomMeta.providers.voice;
     if (roomRef.current) {
       if (transcriptionState === "starting") {
@@ -1020,6 +1073,41 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
       disconnectRoom();
     }
   }, [connectionState, disconnectRoom, roomMeta.status]);
+
+  useEffect(() => {
+    if (!speakerSwitchPending || connectionState !== "connected") {
+      return;
+    }
+
+    if (!pendingVoiceRestartAfterSpeakerSwitchRef.current) {
+      setSpeakerSwitchPending(false);
+      return;
+    }
+
+    pendingVoiceRestartAfterSpeakerSwitchRef.current = false;
+    void startVoiceCall().finally(() => {
+      setSpeakerSwitchPending(false);
+    });
+  }, [connectionState, speakerSwitchPending, startVoiceCall]);
+
+  useEffect(() => {
+    if (!speakerSwitchPending) {
+      return;
+    }
+
+    const ownerActive = roomMeta.isCreator || roomMeta.ownerPresence.active;
+    if (roomMeta.status !== "ENDED" && ownerActive) {
+      return;
+    }
+
+    pendingVoiceRestartAfterSpeakerSwitchRef.current = false;
+    setSpeakerSwitchPending(false);
+  }, [
+    roomMeta.isCreator,
+    roomMeta.ownerPresence.active,
+    roomMeta.status,
+    speakerSwitchPending,
+  ]);
 
   useEffect(() => {
     const ownerActive = roomMeta.isCreator || roomMeta.ownerPresence.active;
@@ -1142,6 +1230,9 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
   const isInitialConnectionPending =
     connectionState === "disconnected" && !hasAutoConnectAttempted && !roomInteractionBlocked;
   const roomConnectionStatusClass = isInitialConnectionPending ? "connecting" : connectionState;
+  const currentSpeakerName = getRoomSpeakerDisplayName(username, speakerMode);
+  const nextSpeakerMode: RoomSpeakerMode = speakerMode === "self" ? "bot" : "self";
+  const nextSpeakerName = getRoomSpeakerDisplayName(username, nextSpeakerMode);
 
   return (
     <main className="room-page">
@@ -1169,6 +1260,14 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
             </div>
             <div className="room-meta-row">
               <span>@{username}</span>
+              {roomMeta.features.speakerSwitchEnabled ? (
+                <>
+                  <span style={{ color: 'var(--line-strong)' }}>|</span>
+                  <span>
+                    {t("当前说话方", "Current Speaker")}: {currentSpeakerName}
+                  </span>
+                </>
+              ) : null}
               {isEnded && (
                 <>
                   <span style={{ color: 'var(--line-strong)' }}>|</span>
@@ -1222,6 +1321,19 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
             <Link className="text-link-button" style={{ height: '40px' }} href="/">
               {t("返回", "Back")}
             </Link>
+            {roomMeta.features.speakerSwitchEnabled ? (
+              <button
+                type="button"
+                className="ghost-btn"
+                style={{ height: '40px' }}
+                onClick={() => void switchSpeakerMode()}
+                disabled={isEnded || connectionState === "connecting" || speakerSwitchPending}
+              >
+                {speakerSwitchPending
+                  ? t("切换中...", "Switching...")
+                  : t(`切换到 ${nextSpeakerName}`, `Switch to ${nextSpeakerName}`)}
+              </button>
+            ) : null}
             {roomMeta.isCreator ? (
               <button type="button" className="ghost-btn" style={{ height: '40px', background: 'transparent', border: '1px solid var(--error)', color: 'var(--error)' }} onClick={() => void endConversation()} disabled={endingRoom || isEnded}>
                 {endingRoom
@@ -1243,7 +1355,7 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
             ) : (
               messages.map((message) => {
                 const announcement = message.type === "analysis" || message.type === "summary";
-                const own = announcement ? false : isOwnMessage(message, participantId, username);
+                const own = announcement ? false : isOwnMessage(message, username);
                 return (
                   <div
                     key={message.id}

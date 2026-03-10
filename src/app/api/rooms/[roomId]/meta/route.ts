@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth-guard";
+import { isRoomSpeakerSwitchEnabled } from "@/lib/env";
 import { getRoomOwnerPresence, touchRoomParticipantHeartbeat } from "@/lib/room-presence";
 import { RoomAccessError, buildRoomRuntimeInfo } from "@/lib/rooms";
 import { normalizeRoomId } from "@/lib/room-utils";
@@ -49,6 +50,9 @@ export async function GET(_request: Request, context: RouteContext) {
         },
       },
       providers: runtimeInfo.providers,
+      features: {
+        speakerSwitchEnabled: isRoomSpeakerSwitchEnabled(),
+      },
     });
   } catch (error) {
     if (error instanceof RoomAccessError) {

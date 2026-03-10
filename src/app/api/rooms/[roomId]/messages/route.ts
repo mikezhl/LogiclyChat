@@ -11,12 +11,14 @@ import { ensureConversationAnalysisWorker } from "@/features/analysis/runtime/wo
 import { requireApiUser } from "@/lib/auth-guard";
 import { ChatMessage } from "@/lib/chat-types";
 import { MESSAGE_PAGE_SIZE } from "@/lib/constants";
+import { isRoomSpeakerSwitchEnabled } from "@/lib/env";
 import { createRoomServiceClient, publishChatMessageViaLivekit } from "@/lib/livekit-chat-relay";
 import { toChatMessage } from "@/lib/messages";
 import { resolveProviderCredentialsForOwner } from "@/lib/provider-keys";
 import { prisma } from "@/lib/prisma";
 import { assertRoomOwnerActiveOrThrow } from "@/lib/room-presence";
 import { RoomAccessError, assertRoomNotEnded, getAccessibleRoomOrThrow } from "@/lib/rooms";
+import { buildRoomSpeakerProfile, resolveRoomSpeakerMode } from "@/lib/room-speaker";
 import { normalizeRoomId } from "@/lib/room-utils";
 
 export const runtime = "nodejs";
@@ -28,8 +30,8 @@ type RouteContext = {
 };
 
 type PostMessageRequest = {
-  participantId?: string;
   content?: string;
+  speakerMode?: string;
 };
 
 async function relayMessageToRoom(roomId: string, ownerUserId: string | null, message: ChatMessage) {
@@ -114,22 +116,32 @@ export async function POST(request: Request, context: RouteContext) {
 
     const body = (await request.json()) as PostMessageRequest;
     const content = body?.content?.trim();
+    const speakerMode = resolveRoomSpeakerMode(body?.speakerMode);
 
     if (!content) {
       return NextResponse.json({ error: "content is required" }, { status: 400 });
     }
 
+    if (speakerMode === "bot" && !isRoomSpeakerSwitchEnabled()) {
+      return NextResponse.json({ error: "room speaker switch is disabled" }, { status: 403 });
+    }
+
     const room = await getAccessibleRoomOrThrow(roomId, user.id);
     assertRoomNotEnded(room.status);
     await assertRoomOwnerActiveOrThrow(room, user.id);
+    const speakerProfile = buildRoomSpeakerProfile({
+      userId: user.id,
+      username: user.username,
+      mode: speakerMode,
+    });
 
     const message = await prisma.message.create({
       data: {
         roomRefId: room.id,
         type: MessageType.TEXT,
-        senderName: user.username,
-        senderUserId: user.id,
-        participantId: body.participantId?.trim() || null,
+        senderName: speakerProfile.displayName,
+        senderUserId: speakerProfile.senderUserId,
+        participantId: speakerProfile.participantIdentity,
         content,
       },
     });
