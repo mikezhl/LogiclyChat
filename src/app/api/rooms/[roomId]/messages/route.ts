@@ -12,9 +12,9 @@ import { requireApiUser } from "@/lib/auth-guard";
 import { ChatMessage } from "@/lib/chat-types";
 import { MESSAGE_PAGE_SIZE } from "@/lib/constants";
 import { isRoomSpeakerSwitchEnabled } from "@/lib/env";
+import { resolveRoomVoiceRuntimeForOwner } from "@/features/transcription/core/runtime";
 import { createRoomServiceClient, publishChatMessageViaLivekit } from "@/lib/livekit-chat-relay";
 import { toChatMessage } from "@/lib/messages";
-import { resolveProviderCredentialsForOwner } from "@/lib/provider-keys";
 import { prisma } from "@/lib/prisma";
 import { assertRoomOwnerActiveOrThrow } from "@/lib/room-presence";
 import { RoomAccessError, assertRoomNotEnded, getAccessibleRoomOrThrow } from "@/lib/rooms";
@@ -35,7 +35,8 @@ type PostMessageRequest = {
 };
 
 async function relayMessageToRoom(roomId: string, ownerUserId: string | null, message: ChatMessage) {
-  const credentials = await resolveProviderCredentialsForOwner(ownerUserId);
+  const voiceRuntime = await resolveRoomVoiceRuntimeForOwner(ownerUserId);
+  const credentials = voiceRuntime.livekit;
   if (!credentials.livekitUrl || !credentials.livekitApiKey || !credentials.livekitApiSecret) {
     return;
   }

@@ -154,6 +154,14 @@ a:focus-visible {
   .room-quick-actions {
     grid-template-columns: 1fr;
   }
+
+  .join-room-form {
+    flex-direction: column;
+  }
+
+  .usage-summary-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .join-room-form {

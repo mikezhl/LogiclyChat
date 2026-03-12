@@ -24,6 +24,11 @@ enum RoomStatus {
   ENDED
 }
 
+enum TranscriptionProvider {
+  DEEPGRAM
+  DASHSCOPE
+}
+
 model Room {
   id           String            @id @default(cuid())
   roomId       String            @unique
@@ -56,18 +61,20 @@ model Message {
 }
 
 model User {
-  id               String            @id @default(cuid())
-  username         String            @unique
-  passwordHash     String
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  sessions         Session[]
-  createdRooms     Room[]            @relation("CreatedRooms")
-  roomParticipants RoomParticipant[]
-  messages         Message[]
-  providerKeys     UserProviderKeys?
-  llmKeys          UserLlmKeys?
-  usageStats       UserUsageStats?
+  id                         String                                @id @default(cuid())
+  username                   String                                @unique
+  passwordHash               String
+  createdAt                  DateTime                              @default(now())
+  updatedAt                  DateTime                              @updatedAt
+  sessions                   Session[]
+  createdRooms               Room[]                                @relation("CreatedRooms")
+  roomParticipants           RoomParticipant[]
+  messages                   Message[]
+  livekitCredentials         UserLivekitCredentials?
+  transcriptionCredentials   UserTranscriptionProviderCredential[]
+  providerPreference         UserProviderPreference?
+  llmKeys                    UserLlmKeys?
+  usageStats                 UserUsageStats?
 }
 
 model Session {
@@ -95,16 +102,37 @@ model RoomParticipant {
   @@index([userId, joinedAt])
 }
 
-model UserProviderKeys {
-  id                       String   @id @default(cuid())
-  userId                   String   @unique
-  user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  livekitUrlEncrypted      String?
-  livekitApiKeyEncrypted   String?
+model UserLivekitCredentials {
+  id                      String   @id @default(cuid())
+  userId                  String   @unique
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  livekitUrlEncrypted     String?
+  livekitApiKeyEncrypted  String?
   livekitApiSecretEncrypted String?
-  deepgramApiKeyEncrypted  String?
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+model UserTranscriptionProviderCredential {
+  id                    String                @id @default(cuid())
+  userId                String
+  user                  User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider              TranscriptionProvider
+  configEncrypted       String?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  @@unique([userId, provider])
+  @@index([provider, updatedAt])
+}
+
+model UserProviderPreference {
+  id                           String                 @id @default(cuid())
+  userId                       String                 @unique
+  user                         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  defaultTranscriptionProvider TranscriptionProvider?
+  createdAt                    DateTime               @default(now())
+  updatedAt                    DateTime               @updatedAt
 }
 
 model UserLlmKeys {

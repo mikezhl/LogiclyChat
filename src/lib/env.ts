@@ -3,7 +3,34 @@ type EnvKey =
   | "LIVEKIT_URL"
   | "LIVEKIT_API_KEY"
   | "LIVEKIT_API_SECRET"
+  | "LIVEKIT_TRANSCRIBER_ENABLED"
+  | "LIVEKIT_TRANSCRIBER_AGENT_NAME"
   | "DEEPGRAM_API_KEY"
+  | "DEEPGRAM_MODEL"
+  | "DEEPGRAM_LANGUAGE"
+  | "DEEPGRAM_INTERIM_RESULTS"
+  | "DEEPGRAM_PUNCTUATE"
+  | "DEEPGRAM_SMART_FORMAT"
+  | "DEEPGRAM_ENDPOINTING"
+  | "DEEPGRAM_PROFANITY_FILTER"
+  | "DEEPGRAM_FILLER_WORDS"
+  | "DEEPGRAM_NUMERALS"
+  | "DEEPGRAM_DETECT_LANGUAGE"
+  | "DEEPGRAM_NO_DELAY"
+  | "DEEPGRAM_DIARIZE"
+  | "DEEPGRAM_DICTATION"
+  | "DEEPGRAM_SAMPLE_RATE"
+  | "DEEPGRAM_NUM_CHANNELS"
+  | "DEEPGRAM_MIP_OPT_OUT"
+  | "TRANSCRIPTION_PROVIDER"
+  | "DASHSCOPE_API_KEY"
+  | "DASHSCOPE_REALTIME_URL"
+  | "DASHSCOPE_REALTIME_MODEL"
+  | "DASHSCOPE_REALTIME_LANGUAGE"
+  | "DASHSCOPE_REALTIME_AUDIO_FORMAT"
+  | "DASHSCOPE_REALTIME_SAMPLE_RATE"
+  | "DASHSCOPE_REALTIME_SERVER_VAD"
+  | "DASHSCOPE_REALTIME_SILENCE_DURATION_MS"
   | "CONVERSATION_LLM_PROVIDER"
   | "CONVERSATION_LLM_OPENAI_BASE_URL"
   | "CONVERSATION_LLM_OPENAI_API_KEY"
@@ -39,6 +66,27 @@ export function getUserProviderKeysMode(): UserProviderKeysMode {
 }
 
 export function isRoomSpeakerSwitchEnabled(): boolean {
-  const raw = optionalEnv("ROOM_SPEAKER_SWITCH_ENABLED")?.toLowerCase();
-  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+  return parseBooleanEnv(optionalEnv("ROOM_SPEAKER_SWITCH_ENABLED"), false);
+}
+
+export function parseBooleanEnv(value: string | null | undefined, fallback: boolean) {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+  if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on") {
+    return true;
+  }
+  if (normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off") {
+    return false;
+  }
+  return fallback;
+}
+
+export function parseIntegerEnv(value: string | null | undefined, fallback: number) {
+  if (!value) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? fallback : parsed;
 }

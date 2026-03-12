@@ -10,6 +10,43 @@ import { getRoomSpeakerDisplayName, type RoomSpeakerMode } from "@/lib/room-spea
 import { useUiLanguage } from "@/lib/use-ui-language";
 import { toDateLocale, type UiLanguage } from "@/lib/ui-language";
 
+type ProviderOwner = {
+  kind: "platform" | "user" | "builtin" | "unavailable";
+  username: string | null;
+};
+
+type VoiceProviderState = {
+  providedBy: ProviderOwner;
+  ready: boolean;
+  error: string | null;
+  transcriberEnabled: boolean;
+  transport: {
+    provider: string;
+    source: "user" | "system" | "unavailable";
+    credentialMask: string | null;
+    ready: boolean;
+  };
+  transcription: {
+    provider: string | null;
+    source: "user" | "system" | "unavailable";
+    credentialMask: string | null;
+    ready: boolean;
+  };
+};
+
+type AnalysisProviderState = {
+  providedBy: ProviderOwner;
+  provider: string;
+  source: "user" | "system" | "unavailable" | "builtin";
+  credentialMask: string | null;
+  model: string | null;
+  ready: boolean;
+  profiles: {
+    realtime: string;
+    summary: string;
+  };
+};
+
 type TokenResponse = {
   token: string;
   livekitUrl: string;
@@ -17,36 +54,8 @@ type TokenResponse = {
   displayName: string;
   transcriberEnabled: boolean;
   providers: {
-    voice: {
-      providedBy: {
-        kind: "platform" | "user" | "builtin" | "unavailable";
-        username: string | null;
-      };
-      transportProvider: string;
-      transportSource: "user" | "system" | "unavailable";
-      transportCredentialMask: string | null;
-      transportReady: boolean;
-      transcriptionEnabled: boolean;
-      transcriptionProvider: string | null;
-      transcriptionSource: "user" | "system" | "unavailable";
-      transcriptionCredentialMask: string | null;
-      transcriptionReady: boolean;
-    };
-    analysis: {
-      providedBy: {
-        kind: "platform" | "user" | "builtin" | "unavailable";
-        username: string | null;
-      };
-      provider: string;
-      source: "user" | "system" | "unavailable" | "builtin";
-      credentialMask: string | null;
-      model: string | null;
-      ready: boolean;
-      profiles: {
-        realtime: string;
-        summary: string;
-      };
-    };
+    voice: VoiceProviderState;
+    analysis: AnalysisProviderState;
   };
   error?: string;
 };
@@ -69,36 +78,8 @@ type RoomMetaResponse = {
     };
   };
   providers: {
-    voice: {
-      providedBy: {
-        kind: "platform" | "user" | "builtin" | "unavailable";
-        username: string | null;
-      };
-      transportProvider: string;
-      transportSource: "user" | "system" | "unavailable";
-      transportCredentialMask: string | null;
-      transportReady: boolean;
-      transcriptionEnabled: boolean;
-      transcriptionProvider: string | null;
-      transcriptionSource: "user" | "system" | "unavailable";
-      transcriptionCredentialMask: string | null;
-      transcriptionReady: boolean;
-    };
-    analysis: {
-      providedBy: {
-        kind: "platform" | "user" | "builtin" | "unavailable";
-        username: string | null;
-      };
-      provider: string;
-      source: "user" | "system" | "unavailable" | "builtin";
-      credentialMask: string | null;
-      model: string | null;
-      ready: boolean;
-      profiles: {
-        realtime: string;
-        summary: string;
-      };
-    };
+    voice: VoiceProviderState;
+    analysis: AnalysisProviderState;
   };
   features: {
     speakerSwitchEnabled: boolean;
@@ -123,43 +104,13 @@ type RoomMetaState = {
     timeoutMs: number;
   };
   providers: {
-    voice: {
-      providedBy: {
-        kind: "platform" | "user" | "builtin" | "unavailable";
-        username: string | null;
-      };
-      transportProvider: string;
-      transportSource: "user" | "system" | "unavailable";
-      transportCredentialMask: string | null;
-      transportReady: boolean;
-      transcriptionEnabled: boolean;
-      transcriptionProvider: string | null;
-      transcriptionSource: "user" | "system" | "unavailable";
-      transcriptionCredentialMask: string | null;
-      transcriptionReady: boolean;
-    };
-    analysis: {
-      providedBy: {
-        kind: "platform" | "user" | "builtin" | "unavailable";
-        username: string | null;
-      };
-      provider: string;
-      source: "user" | "system" | "unavailable" | "builtin";
-      credentialMask: string | null;
-      model: string | null;
-      ready: boolean;
-      profiles: {
-        realtime: string;
-        summary: string;
-      };
-    };
+    voice: VoiceProviderState;
+    analysis: AnalysisProviderState;
   };
   features: {
     speakerSwitchEnabled: boolean;
   };
 };
-
-type VoiceProviderState = RoomMetaState["providers"]["voice"];
 type VoiceTrackParticipant = {
   isAgent: boolean;
   getTrackPublication(source: Track.Source): { isMuted: boolean } | undefined;
@@ -231,7 +182,7 @@ function formatProviderName(value: string, language: UiLanguage) {
 }
 
 function formatProviderOwner(
-  owner: RoomMetaState["providers"]["voice"]["providedBy"],
+  owner: ProviderOwner,
   language: UiLanguage,
 ) {
   if (owner.kind === "user") {
@@ -267,23 +218,44 @@ function getAnalysisProviderLabel(
 }
 
 function getVoiceProviderDetails(
-  voice: RoomMetaState["providers"]["voice"],
+  voice: VoiceProviderState,
   language: UiLanguage,
 ) {
-  return [
+  const details = [
     {
       label: language === "zh" ? "语音通道" : "Voice transport",
-      value: formatProviderName(voice.transportProvider, language),
+      value: formatProviderName(voice.transport.provider, language),
     },
     {
       label: language === "zh" ? "转录引擎" : "Transcription",
-      value: voice.transcriptionEnabled
-        ? formatProviderName(voice.transcriptionProvider ?? "", language)
+      value: voice.transcriberEnabled
+        ? formatProviderName(voice.transcription.provider ?? "", language)
+        : language === "zh"
+          ? "已关闭"
+          : "Disabled",
+    },
+    {
+      label: language === "zh" ? "语音来源" : "Transport source",
+      value: formatProviderValue(voice.transport.source, language),
+    },
+    {
+      label: language === "zh" ? "转录来源" : "Transcription source",
+      value: voice.transcriberEnabled
+        ? formatProviderValue(voice.transcription.source, language)
         : language === "zh"
           ? "已关闭"
           : "Disabled",
     },
   ];
+
+  if (!voice.ready && voice.error) {
+    details.push({
+      label: language === "zh" ? "错误" : "Error",
+      value: voice.error,
+    });
+  }
+
+  return details;
 }
 
 function getAnalysisProviderDetails(
@@ -316,7 +288,7 @@ function getAnalysisProviderDetails(
 }
 
 function getIdleTranscriptionState(voice: VoiceProviderState): TranscriptionState {
-  return voice.transcriptionEnabled && voice.transcriptionReady ? "idle" : "disabled";
+  return voice.transcriberEnabled && voice.transcription.ready ? "idle" : "disabled";
 }
 
 function getOwnerOfflineError(language: UiLanguage) {
@@ -365,15 +337,21 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
           kind: "platform",
           username: null,
         },
-        transportProvider: "livekit",
-        transportSource: "system",
-        transportCredentialMask: null,
-        transportReady: true,
-        transcriptionEnabled: true,
-        transcriptionProvider: "deepgram",
-        transcriptionSource: "system",
-        transcriptionCredentialMask: null,
-        transcriptionReady: true,
+        ready: true,
+        error: null,
+        transcriberEnabled: true,
+        transport: {
+          provider: "livekit",
+          source: "system",
+          credentialMask: null,
+          ready: true,
+        },
+        transcription: {
+          provider: "deepgram",
+          source: "system",
+          credentialMask: null,
+          ready: true,
+        },
       },
       analysis: {
         providedBy: {
@@ -510,7 +488,7 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
 
     setMicEnabled(localVoiceActive);
     setTranscriptionState(
-      !voiceProvider.transcriptionEnabled || !voiceProvider.transcriptionReady
+      !voiceProvider.transcriberEnabled || !voiceProvider.transcription.ready
         ? "disabled"
         : voiceCallStartingRef.current
           ? hasActiveVoiceSession && transcriptionRuntimeReady

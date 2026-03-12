@@ -15,6 +15,7 @@
 
 # next.js
 /.next/
+/.next_old_build_cache/
 /out/
 
 # production

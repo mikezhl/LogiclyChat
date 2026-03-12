@@ -1,7 +1,7 @@
 import { UserLlmKeys } from "@prisma/client";
 
 import { getUserProviderKeysMode, optionalEnv } from "./env";
-import { type KeySource } from "./provider-keys";
+import { type KeySource } from "./provider-sources";
 import { prisma } from "./prisma";
 import {
   decryptOptionalSecret,

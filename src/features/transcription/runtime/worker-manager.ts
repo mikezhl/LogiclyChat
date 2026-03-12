@@ -76,7 +76,7 @@ function getSpawnCommandAndArgs() {
   if (fs.existsSync(localTsxCli)) {
     return {
       command: process.execPath,
-      args: [localTsxCli, "src/features/transcription/agent/deepgram-transcriber-agent.ts", "dev"],
+      args: [localTsxCli, "src/features/transcription/agent/transcriber-agent.ts", "dev"],
     };
   }
 
@@ -88,7 +88,7 @@ function getSpawnCommandAndArgs() {
         npmExecPath,
         "exec",
         "tsx",
-        "src/features/transcription/agent/deepgram-transcriber-agent.ts",
+        "src/features/transcription/agent/transcriber-agent.ts",
         "dev",
       ],
     };
@@ -96,7 +96,7 @@ function getSpawnCommandAndArgs() {
 
   return {
     command: process.platform === "win32" ? "pnpm.cmd" : "pnpm",
-    args: ["exec", "tsx", "src/features/transcription/agent/deepgram-transcriber-agent.ts", "dev"],
+    args: ["exec", "tsx", "src/features/transcription/agent/transcriber-agent.ts", "dev"],
   };
 }
 

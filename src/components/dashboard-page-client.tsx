@@ -1,10 +1,11 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
 import Link from "next/link";
+import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useUiLanguage } from "@/lib/use-ui-language";
+
 import { toDateLocale, type UiLanguage } from "@/lib/ui-language";
+import { useUiLanguage } from "@/lib/use-ui-language";
 
 type RoomSummary = {
   roomId: string;
@@ -17,12 +18,34 @@ type RoomSummary = {
   joinedAt?: string;
 };
 
-type KeyStatus = {
+type UserInfo = {
+  id: string;
+  username: string;
+};
+
+type LivekitStatus = {
   configured: boolean;
   livekitUrlMask: string | null;
   livekitApiKeyMask: string | null;
   livekitApiSecretMask: string | null;
-  deepgramApiKeyMask: string | null;
+};
+
+type TranscriptionProviderName = "deepgram" | "dashscope";
+
+type TranscriptionSettingsStatus = {
+  defaultProvider: TranscriptionProviderName | null;
+  providers: Array<{
+    provider: TranscriptionProviderName;
+    configured: boolean;
+    credentialMask: string | null;
+  }>;
+};
+
+type LlmKeyStatus = {
+  configured: boolean;
+  baseUrlMask: string | null;
+  apiKeyMask: string | null;
+  model: string | null;
 };
 
 type UsageSummary = {
@@ -36,6 +59,23 @@ type UsageSummary = {
   };
 };
 
+type DashboardPageClientProps = {
+  initialUser: UserInfo | null;
+  initialCreatedRooms: RoomSummary[];
+  initialJoinedRooms: RoomSummary[];
+  initialLivekitStatus: LivekitStatus | null;
+  initialTranscriptionStatus: TranscriptionSettingsStatus | null;
+  initialLlmKeyStatus: LlmKeyStatus | null;
+  initialUsageSummary: UsageSummary | null;
+  initialAuthMode: "login" | "register" | null;
+  initialNextPath: string | null;
+};
+
+type AuthResponse = {
+  user?: UserInfo;
+  error?: string;
+};
+
 type DashboardResponse = {
   createdRooms: RoomSummary[];
   joinedRooms: RoomSummary[];
@@ -43,48 +83,28 @@ type DashboardResponse = {
   error?: string;
 };
 
-type KeyStatusResponse = {
-  status: KeyStatus;
+type StatusResponse<T> = {
+  status: T;
   error?: string;
 };
 
-type LlmKeyStatus = {
-  configured: boolean;
-  baseUrlMask: string | null;
-  apiKeyMask: string | null;
-  model: string | null;
-};
+const PROVIDERS: TranscriptionProviderName[] = ["deepgram", "dashscope"];
+const DASHSCOPE_DEFAULT_MODEL = "qwen3-asr-flash-realtime";
 
-type LlmKeyStatusResponse = {
-  status: LlmKeyStatus;
-  error?: string;
-};
+function emptyProviderForm(): Record<TranscriptionProviderName, string> {
+  return { deepgram: "", dashscope: "" };
+}
 
-type AuthResponse = {
-  user?: {
-    id: string;
-    username: string;
-  };
-  error?: string;
-};
+function normalizeNextPath(value: string | null | undefined) {
+  if (!value || !value.startsWith("/")) {
+    return null;
+  }
+  return value;
+}
 
-type UserInfo = {
-  id: string;
-  username: string;
-};
-
-type AuthMode = "login" | "register";
-
-type DashboardPageClientProps = {
-  initialUser: UserInfo | null;
-  initialCreatedRooms: RoomSummary[];
-  initialJoinedRooms: RoomSummary[];
-  initialKeyStatus: KeyStatus | null;
-  initialLlmKeyStatus: LlmKeyStatus | null;
-  initialUsageSummary: UsageSummary | null;
-  initialAuthMode: AuthMode | null;
-  initialNextPath: string | null;
-};
+function isBlank(value: string) {
+  return value.trim().length === 0;
+}
 
 function formatDate(value: string | null, language: UiLanguage) {
   if (!value) {
@@ -106,24 +126,6 @@ function formatDate(value: string | null, language: UiLanguage) {
   }).format(date);
 }
 
-function roomStatusLabel(status: string, language: UiLanguage) {
-  if (status === "ENDED") {
-    return language === "zh" ? "已结束" : "Ended";
-  }
-  return language === "zh" ? "进行中" : "Active";
-}
-
-function normalizeNextPath(raw: string | null | undefined) {
-  if (!raw || !raw.startsWith("/")) {
-    return null;
-  }
-  return raw;
-}
-
-function isBlank(value: string) {
-  return value.trim().length === 0;
-}
-
 function formatSeconds(value: number, language: UiLanguage) {
   const formatter = new Intl.NumberFormat(toDateLocale(language), {
     minimumFractionDigits: value > 0 && value < 10 ? 1 : 0,
@@ -134,14 +136,36 @@ function formatSeconds(value: number, language: UiLanguage) {
 
 function formatTokens(value: number, language: UiLanguage) {
   const formatter = new Intl.NumberFormat(toDateLocale(language));
-  return `${formatter.format(value)} ${language === "zh" ? "tokens" : "tokens"}`;
+  return `${formatter.format(value)} tokens`;
+}
+
+function roomStatusLabel(status: string, language: UiLanguage) {
+  if (status === "ENDED") {
+    return language === "zh" ? "已结束" : "Ended";
+  }
+  return language === "zh" ? "进行中" : "Active";
+}
+
+function providerLabel(provider: TranscriptionProviderName, language: UiLanguage) {
+  if (provider === "dashscope") {
+    return language === "zh" ? "阿里千问 DashScope" : "DashScope Qwen";
+  }
+  return "Deepgram";
+}
+
+function configuredLabel(configured: boolean, language: UiLanguage) {
+  if (configured) {
+    return language === "zh" ? "已配置" : "Configured";
+  }
+  return language === "zh" ? "未配置" : "Not configured";
 }
 
 export default function DashboardPageClient({
   initialUser,
   initialCreatedRooms,
   initialJoinedRooms,
-  initialKeyStatus,
+  initialLivekitStatus,
+  initialTranscriptionStatus,
   initialLlmKeyStatus,
   initialUsageSummary,
   initialAuthMode,
@@ -151,9 +175,8 @@ export default function DashboardPageClient({
   const { language, setLanguage } = useUiLanguage();
   const isZh = language === "zh";
   const t = (zh: string, en: string) => (isZh ? zh : en);
-  const toggleLanguage = () => setLanguage(isZh ? "en" : "zh");
-  const [user, setUser] = useState<UserInfo | null>(initialUser);
 
+  const [user, setUser] = useState<UserInfo | null>(initialUser);
   const [createdRooms, setCreatedRooms] = useState(initialCreatedRooms);
   const [joinedRooms, setJoinedRooms] = useState(initialJoinedRooms);
   const [usageSummary, setUsageSummary] = useState<UsageSummary | null>(initialUsageSummary);
@@ -162,30 +185,29 @@ export default function DashboardPageClient({
   const [roomActionLoading, setRoomActionLoading] = useState<"create" | "join" | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
 
-  const [keyStatus, setKeyStatus] = useState<KeyStatus | null>(initialKeyStatus);
-  const [keyForm, setKeyForm] = useState({
+  const [livekitStatus, setLivekitStatus] = useState<LivekitStatus | null>(initialLivekitStatus);
+  const [livekitForm, setLivekitForm] = useState({
     livekitUrl: "",
     livekitApiKey: "",
     livekitApiSecret: "",
-    deepgramApiKey: "",
   });
-  const [keyLoading, setKeyLoading] = useState(false);
-  const [keyError, setKeyError] = useState("");
+  const [livekitLoading, setLivekitLoading] = useState(false);
+  const [livekitError, setLivekitError] = useState("");
+
+  const [transcriptionStatus, setTranscriptionStatus] =
+    useState<TranscriptionSettingsStatus | null>(initialTranscriptionStatus);
+  const [transcriptionForm, setTranscriptionForm] = useState(emptyProviderForm());
+  const [transcriptionLoading, setTranscriptionLoading] = useState<string | null>(null);
+  const [transcriptionError, setTranscriptionError] = useState("");
+
   const [llmKeyStatus, setLlmKeyStatus] = useState<LlmKeyStatus | null>(initialLlmKeyStatus);
-  const [llmForm, setLlmForm] = useState({
-    baseUrl: "",
-    apiKey: "",
-    model: "",
-  });
+  const [llmForm, setLlmForm] = useState({ baseUrl: "", apiKey: "", model: "" });
   const [llmLoading, setLlmLoading] = useState(false);
   const [llmError, setLlmError] = useState("");
 
-  const [authMode, setAuthMode] = useState<AuthMode | null>(initialAuthMode);
+  const [authMode, setAuthMode] = useState<"login" | "register" | null>(initialAuthMode);
   const [authNextPath, setAuthNextPath] = useState<string | null>(normalizeNextPath(initialNextPath));
-  const [authForm, setAuthForm] = useState({
-    username: "",
-    password: "",
-  });
+  const [authForm, setAuthForm] = useState({ username: "", password: "" });
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
   const [pendingRoomAction, setPendingRoomAction] = useState<"create" | "join" | null>(null);
@@ -193,19 +215,22 @@ export default function DashboardPageClient({
   const isAuthenticated = Boolean(user);
   const hasHistory = createdRooms.length > 0 || joinedRooms.length > 0;
   const authTitle = authMode === "register" ? t("注册", "Sign Up") : t("登录", "Sign In");
+  const heroSubtitle = isAuthenticated
+    ? t(
+        `你好，${user?.username}。可以直接创建或加入房间。`,
+        `Hi, ${user?.username}. You can create or join a room right away.`,
+      )
+    : t(
+        "一个实时的 AI 辩论/吵架辅助 + 分析 + 总结平台",
+        "A real-time AI debate and argument copilot for assist, analysis, and summaries.",
+      );
+  const providerMap = new Map((transcriptionStatus?.providers ?? []).map((item) => [item.provider, item]));
 
-  const heroSubtitle = useMemo(() => {
-    if (!isAuthenticated) {
-      return isZh
-        ? "一个实时的 AI 辩论/吵架辅助 + 分析 + 总结平台"
-        : "A real-time AI debate and argument copilot for assist, analysis, and summaries.";
-    }
-    return isZh
-      ? `你好，${user!.username}。可以直接创建或加入房间。`
-      : `Hi, ${user!.username}. You can create or join a room right away.`;
-  }, [isAuthenticated, isZh, user]);
+  function toggleLanguage() {
+    setLanguage(isZh ? "en" : "zh");
+  }
 
-  function openAuthModal(mode: AuthMode, nextPath?: string | null) {
+  function openAuthModal(mode: "login" | "register", nextPath?: string | null) {
     setAuthMode(mode);
     setAuthError("");
     if (typeof nextPath !== "undefined") {
@@ -218,128 +243,71 @@ export default function DashboardPageClient({
     setCreatedRooms([]);
     setJoinedRooms([]);
     setUsageSummary(null);
-    setKeyStatus(null);
+    setLivekitStatus(null);
+    setTranscriptionStatus(null);
     setLlmKeyStatus(null);
-    setKeyError("");
+    setLivekitForm({ livekitUrl: "", livekitApiKey: "", livekitApiSecret: "" });
+    setTranscriptionForm(emptyProviderForm());
+    setLlmForm({ baseUrl: "", apiKey: "", model: "" });
+    setLivekitError("");
+    setTranscriptionError("");
     setLlmError("");
-    setKeyForm({
-      livekitUrl: "",
-      livekitApiKey: "",
-      livekitApiSecret: "",
-      deepgramApiKey: "",
-    });
-    setLlmForm({
-      baseUrl: "",
-      apiKey: "",
-      model: "",
-    });
+  }
+
+  async function readJson<T>(response: Response, fallback: string): Promise<T> {
+    const payload = (await response.json()) as T & { error?: string };
+    if (!response.ok) {
+      if (response.status === 401) {
+        clearDataAfterLogout();
+        openAuthModal("login");
+      }
+      throw new Error(payload.error ?? fallback);
+    }
+    return payload;
+  }
+
+  async function getProtected<T>(url: string, fallback: string) {
+    return readJson<T>(await fetch(url, { cache: "no-store" }), fallback);
+  }
+
+  async function postProtected<T>(url: string, body: unknown, fallback: string) {
+    return readJson<T>(
+      await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      fallback,
+    );
+  }
+
+  async function loadAuthenticatedData() {
+    const [dashboard, livekit, transcription, llm] = await Promise.all([
+      getProtected<DashboardResponse>("/api/rooms/dashboard", t("获取历史房间失败", "Failed to load room history")),
+      getProtected<StatusResponse<LivekitStatus>>("/api/account/livekit", t("读取 LiveKit 状态失败", "Failed to read LiveKit status")),
+      getProtected<StatusResponse<TranscriptionSettingsStatus>>("/api/account/transcription", t("读取转录配置失败", "Failed to read transcription settings")),
+      getProtected<StatusResponse<LlmKeyStatus>>("/api/account/llm", t("读取 LLM 状态失败", "Failed to read LLM status")),
+    ]);
+    setCreatedRooms(dashboard.createdRooms);
+    setJoinedRooms(dashboard.joinedRooms);
+    setUsageSummary(dashboard.usage);
+    setLivekitStatus(livekit.status);
+    setTranscriptionStatus(transcription.status);
+    setLlmKeyStatus(llm.status);
   }
 
   async function requireAuthForRoomAction(action: "create" | "join") {
     if (isAuthenticated) {
       return true;
     }
-
     setPendingRoomAction(action);
     setRoomActionError(t("请先登录后再操作。", "Please sign in first."));
     openAuthModal("login");
     return false;
   }
 
-  async function refreshDashboard() {
-    if (!isAuthenticated) {
-      return;
-    }
-
-    setDashboardLoading(true);
-    setRoomActionError("");
-    try {
-      const response = await fetch("/api/rooms/dashboard", { cache: "no-store" });
-      const payload = (await response.json()) as DashboardResponse;
-      if (!response.ok) {
-        if (response.status === 401) {
-          clearDataAfterLogout();
-          openAuthModal("login");
-        }
-        throw new Error(payload.error ?? t("获取历史房间失败", "Failed to load room history"));
-      }
-
-      setCreatedRooms(payload.createdRooms);
-      setJoinedRooms(payload.joinedRooms);
-      setUsageSummary(payload.usage);
-    } catch (error) {
-      setRoomActionError(
-        error instanceof Error ? error.message : t("获取历史房间失败", "Failed to load room history"),
-      );
-    } finally {
-      setDashboardLoading(false);
-    }
-  }
-
-  async function refreshKeyStatus() {
-    if (!isAuthenticated) {
-      return;
-    }
-
-    const response = await fetch("/api/account/keys", { cache: "no-store" });
-    const payload = (await response.json()) as KeyStatusResponse;
-    if (!response.ok) {
-      if (response.status === 401) {
-        clearDataAfterLogout();
-        openAuthModal("login");
-      }
-      throw new Error(payload.error ?? t("读取 Key 状态失败", "Failed to read key status"));
-    }
-    setKeyStatus(payload.status);
-  }
-
-  async function refreshLlmKeyStatus() {
-    if (!isAuthenticated) {
-      return;
-    }
-
-    const response = await fetch("/api/account/llm", { cache: "no-store" });
-    const payload = (await response.json()) as LlmKeyStatusResponse;
-    if (!response.ok) {
-      if (response.status === 401) {
-        clearDataAfterLogout();
-        openAuthModal("login");
-      }
-      throw new Error(payload.error ?? t("读取 LLM 状态失败", "Failed to read LLM status"));
-    }
-    setLlmKeyStatus(payload.status);
-  }
-
-  async function loadAuthenticatedData() {
-    const [dashboardResponse, keyResponse, llmResponse] = await Promise.all([
-      fetch("/api/rooms/dashboard", { cache: "no-store" }),
-      fetch("/api/account/keys", { cache: "no-store" }),
-      fetch("/api/account/llm", { cache: "no-store" }),
-    ]);
-
-    const dashboardPayload = (await dashboardResponse.json()) as DashboardResponse;
-    const keyPayload = (await keyResponse.json()) as KeyStatusResponse;
-    const llmPayload = (await llmResponse.json()) as LlmKeyStatusResponse;
-
-    if (!dashboardResponse.ok) {
-      throw new Error(dashboardPayload.error ?? t("获取历史房间失败", "Failed to load room history"));
-    }
-    if (!keyResponse.ok) {
-      throw new Error(keyPayload.error ?? t("读取 Key 状态失败", "Failed to read key status"));
-    }
-
-    setCreatedRooms(dashboardPayload.createdRooms);
-    setJoinedRooms(dashboardPayload.joinedRooms);
-    setUsageSummary(dashboardPayload.usage);
-    setKeyStatus(keyPayload.status);
-    if (!llmResponse.ok) {
-      throw new Error(llmPayload.error ?? t("读取 LLM 状态失败", "Failed to read LLM status"));
-    }
-    setLlmKeyStatus(llmPayload.status);
-  }
-
   async function bootstrapRoom(action: "create" | "join") {
-    if (action === "join" && roomIdToJoin.trim().length === 0) {
+    if (action === "join" && !roomIdToJoin.trim()) {
       setRoomActionError(t("请输入房间号。", "Please enter a room ID."));
       return;
     }
@@ -348,50 +316,21 @@ export default function DashboardPageClient({
     setRoomActionError("");
 
     try {
-      const response = await fetch("/api/rooms/bootstrap", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body:
-          action === "create"
-            ? JSON.stringify({ action: "create" })
-            : JSON.stringify({ action: "join", roomId: roomIdToJoin.trim() }),
-      });
-
-      const payload = (await response.json()) as { roomId?: string; error?: string };
-      if (!response.ok || !payload.roomId) {
-        if (response.status === 401) {
-          setPendingRoomAction(action);
-          openAuthModal("login");
-        }
-        throw new Error(payload.error ?? t("房间操作失败", "Room action failed"));
+      const payload = await postProtected<{ roomId?: string }>(
+        "/api/rooms/bootstrap",
+        action === "create" ? { action } : { action, roomId: roomIdToJoin.trim() },
+        t("房间操作失败", "Room action failed"),
+      );
+      if (!payload.roomId) {
+        throw new Error(t("房间操作失败", "Room action failed"));
       }
-
       setPendingRoomAction(null);
       router.push(`/${encodeURIComponent(payload.roomId)}`);
     } catch (error) {
-      setRoomActionError(
-        error instanceof Error ? error.message : t("房间操作失败", "Room action failed"),
-      );
+      setRoomActionError(error instanceof Error ? error.message : t("房间操作失败", "Room action failed"));
     } finally {
       setRoomActionLoading(null);
     }
-  }
-
-  async function handleCreateRoom() {
-    const canContinue = await requireAuthForRoomAction("create");
-    if (!canContinue) {
-      return;
-    }
-    await bootstrapRoom("create");
-  }
-
-  async function handleJoinRoom(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const canContinue = await requireAuthForRoomAction("join");
-    if (!canContinue) {
-      return;
-    }
-    await bootstrapRoom("join");
   }
 
   async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
@@ -404,24 +343,17 @@ export default function DashboardPageClient({
     setAuthError("");
 
     try {
-      const endpoint = authMode === "login" ? "/api/auth/login" : "/api/auth/register";
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(authForm),
-      });
-      const payload = (await response.json()) as AuthResponse;
-      if (!response.ok || !payload.user) {
-        throw new Error(payload.error ?? `${authTitle}${t("失败", " failed")}`);
+      const payload = await postProtected<AuthResponse>(
+        authMode === "login" ? "/api/auth/login" : "/api/auth/register",
+        authForm,
+        `${authTitle}${t("失败", " failed")}`,
+      );
+      if (!payload.user) {
+        throw new Error(`${authTitle}${t("失败", " failed")}`);
       }
-
       setUser(payload.user);
       setAuthMode(null);
-      setAuthForm({
-        username: "",
-        password: "",
-      });
-
+      setAuthForm({ username: "", password: "" });
       await loadAuthenticatedData();
 
       if (authNextPath) {
@@ -443,186 +375,183 @@ export default function DashboardPageClient({
     }
   }
 
+  async function handleCreateRoom() {
+    const canContinue = await requireAuthForRoomAction("create");
+    if (canContinue) {
+      await bootstrapRoom("create");
+    }
+  }
+
+  async function handleJoinRoom(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const canContinue = await requireAuthForRoomAction("join");
+    if (canContinue) {
+      await bootstrapRoom("join");
+    }
+  }
+
+  async function refreshDashboard() {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    setDashboardLoading(true);
+    setRoomActionError("");
+
+    try {
+      const payload = await getProtected<DashboardResponse>(
+        "/api/rooms/dashboard",
+        t("获取历史房间失败", "Failed to load room history"),
+      );
+      setCreatedRooms(payload.createdRooms);
+      setJoinedRooms(payload.joinedRooms);
+      setUsageSummary(payload.usage);
+    } catch (error) {
+      setRoomActionError(error instanceof Error ? error.message : t("获取历史房间失败", "Failed to load room history"));
+    } finally {
+      setDashboardLoading(false);
+    }
+  }
+
+  async function refreshLivekitStatus() {
+    const payload = await getProtected<StatusResponse<LivekitStatus>>(
+      "/api/account/livekit",
+      t("读取 LiveKit 状态失败", "Failed to read LiveKit status"),
+    );
+    setLivekitStatus(payload.status);
+  }
+
+  async function refreshTranscriptionStatus() {
+    const payload = await getProtected<StatusResponse<TranscriptionSettingsStatus>>(
+      "/api/account/transcription",
+      t("读取转录配置失败", "Failed to read transcription settings"),
+    );
+    setTranscriptionStatus(payload.status);
+  }
+
+  async function refreshLlmStatus() {
+    const payload = await getProtected<StatusResponse<LlmKeyStatus>>(
+      "/api/account/llm",
+      t("读取 LLM 状态失败", "Failed to read LLM status"),
+    );
+    setLlmKeyStatus(payload.status);
+  }
+
+  async function saveLivekit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (Object.values(livekitForm).some(isBlank)) {
+      setLivekitError(t("保存时必须同时填写 LiveKit URL、LiveKit API Key 和 LiveKit API Secret。", "LiveKit URL, LiveKit API key, and LiveKit API secret are required."));
+      return;
+    }
+    setLivekitLoading(true);
+    setLivekitError("");
+    try {
+      const payload = await postProtected<StatusResponse<LivekitStatus>>("/api/account/livekit", livekitForm, t("保存 LiveKit 配置失败", "Failed to save LiveKit settings"));
+      setLivekitStatus(payload.status);
+      setLivekitForm({ livekitUrl: "", livekitApiKey: "", livekitApiSecret: "" });
+    } catch (error) {
+      setLivekitError(error instanceof Error ? error.message : t("保存 LiveKit 配置失败", "Failed to save LiveKit settings"));
+    } finally {
+      setLivekitLoading(false);
+    }
+  }
+
+  async function clearLivekit() {
+    setLivekitLoading(true);
+    setLivekitError("");
+    try {
+      const payload = await postProtected<StatusResponse<LivekitStatus>>("/api/account/livekit", { clear: true }, t("清空 LiveKit 配置失败", "Failed to clear LiveKit settings"));
+      setLivekitStatus(payload.status);
+      setLivekitForm({ livekitUrl: "", livekitApiKey: "", livekitApiSecret: "" });
+    } catch (error) {
+      setLivekitError(error instanceof Error ? error.message : t("清空 LiveKit 配置失败", "Failed to clear LiveKit settings"));
+    } finally {
+      setLivekitLoading(false);
+    }
+  }
+
+  async function saveTranscription(event: FormEvent<HTMLFormElement>, provider: TranscriptionProviderName) {
+    event.preventDefault();
+    if (isBlank(transcriptionForm[provider])) {
+      setTranscriptionError(t("API Key 为必填项。", "API key is required."));
+      return;
+    }
+    setTranscriptionLoading(`save:${provider}`);
+    setTranscriptionError("");
+    try {
+      const payload = await postProtected<StatusResponse<TranscriptionSettingsStatus>>("/api/account/transcription", { action: "save", provider, apiKey: transcriptionForm[provider].trim() }, t("保存转录配置失败", "Failed to save transcription settings"));
+      setTranscriptionStatus(payload.status);
+      setTranscriptionForm((current) => ({ ...current, [provider]: "" }));
+    } catch (error) {
+      setTranscriptionError(error instanceof Error ? error.message : t("保存转录配置失败", "Failed to save transcription settings"));
+    } finally {
+      setTranscriptionLoading(null);
+    }
+  }
+
+  async function clearTranscription(provider: TranscriptionProviderName) {
+    setTranscriptionLoading(`clear:${provider}`);
+    setTranscriptionError("");
+    try {
+      const payload = await postProtected<StatusResponse<TranscriptionSettingsStatus>>("/api/account/transcription", { action: "clear", provider }, t("清空转录配置失败", "Failed to clear transcription settings"));
+      setTranscriptionStatus(payload.status);
+      setTranscriptionForm((current) => ({ ...current, [provider]: "" }));
+    } catch (error) {
+      setTranscriptionError(error instanceof Error ? error.message : t("清空转录配置失败", "Failed to clear transcription settings"));
+    } finally {
+      setTranscriptionLoading(null);
+    }
+  }
+
+  async function setDefaultProvider(provider: TranscriptionProviderName | null) {
+    setTranscriptionLoading(`default:${provider ?? "none"}`);
+    setTranscriptionError("");
+    try {
+      const payload = await postProtected<StatusResponse<TranscriptionSettingsStatus>>("/api/account/transcription", { action: "set-default", provider }, t("更新默认转录工具失败", "Failed to update default transcription provider"));
+      setTranscriptionStatus(payload.status);
+    } catch (error) {
+      setTranscriptionError(error instanceof Error ? error.message : t("更新默认转录工具失败", "Failed to update default transcription provider"));
+    } finally {
+      setTranscriptionLoading(null);
+    }
+  }
+
+  async function saveLlm(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (Object.values(llmForm).some(isBlank)) {
+      setLlmError(t("保存时必须同时填写 LLM URL、LLM API Key 和 LLM Model。", "LLM URL, LLM API key, and LLM model are required."));
+      return;
+    }
+    setLlmLoading(true);
+    setLlmError("");
+    try {
+      const payload = await postProtected<StatusResponse<LlmKeyStatus>>("/api/account/llm", llmForm, t("保存 LLM 配置失败", "Failed to save LLM settings"));
+      setLlmKeyStatus(payload.status);
+      setLlmForm({ baseUrl: "", apiKey: "", model: "" });
+    } catch (error) {
+      setLlmError(error instanceof Error ? error.message : t("保存 LLM 配置失败", "Failed to save LLM settings"));
+    } finally {
+      setLlmLoading(false);
+    }
+  }
+
+  async function clearLlm() {
+    setLlmLoading(true);
+    setLlmError("");
+    try {
+      const payload = await postProtected<StatusResponse<LlmKeyStatus>>("/api/account/llm", { clear: true }, t("清空 LLM 配置失败", "Failed to clear LLM settings"));
+      setLlmKeyStatus(payload.status);
+      setLlmForm({ baseUrl: "", apiKey: "", model: "" });
+    } catch (error) {
+      setLlmError(error instanceof Error ? error.message : t("清空 LLM 配置失败", "Failed to clear LLM settings"));
+    } finally {
+      setLlmLoading(false);
+    }
+  }
+
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     clearDataAfterLogout();
-  }
-
-  async function handleKeySave(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!isAuthenticated) {
-      openAuthModal("login");
-      return;
-    }
-
-    if (
-      isBlank(keyForm.livekitUrl) ||
-      isBlank(keyForm.livekitApiKey) ||
-      isBlank(keyForm.livekitApiSecret) ||
-      isBlank(keyForm.deepgramApiKey)
-    ) {
-      setKeyError(
-        t(
-          "保存时必须同时填写 LiveKit URL、LiveKit API Key、LiveKit API Secret 和 Deepgram API Key。清空请点击“清空”。",
-          'LiveKit URL, LiveKit API Key, LiveKit API Secret, and Deepgram API Key are all required. Use "Clear" to remove saved keys.',
-        ),
-      );
-      return;
-    }
-
-    setKeyLoading(true);
-    setKeyError("");
-
-    try {
-      const response = await fetch("/api/account/keys", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(keyForm),
-      });
-      const payload = (await response.json()) as KeyStatusResponse;
-      if (!response.ok) {
-        if (response.status === 401) {
-          clearDataAfterLogout();
-          openAuthModal("login");
-        }
-        throw new Error(payload.error ?? t("保存 Key 失败", "Failed to save key"));
-      }
-      setKeyStatus(payload.status);
-      setKeyForm({
-        livekitUrl: "",
-        livekitApiKey: "",
-        livekitApiSecret: "",
-        deepgramApiKey: "",
-      });
-    } catch (error) {
-      setKeyError(error instanceof Error ? error.message : t("保存 Key 失败", "Failed to save key"));
-    } finally {
-      setKeyLoading(false);
-    }
-  }
-
-  async function handleKeyClear() {
-    if (!isAuthenticated) {
-      openAuthModal("login");
-      return;
-    }
-
-    setKeyLoading(true);
-    setKeyError("");
-
-    try {
-      const response = await fetch("/api/account/keys", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clear: true }),
-      });
-      const payload = (await response.json()) as KeyStatusResponse;
-      if (!response.ok) {
-        if (response.status === 401) {
-          clearDataAfterLogout();
-          openAuthModal("login");
-        }
-        throw new Error(payload.error ?? t("清空 Key 失败", "Failed to clear key"));
-      }
-      setKeyStatus(payload.status);
-      setKeyForm({
-        livekitUrl: "",
-        livekitApiKey: "",
-        livekitApiSecret: "",
-        deepgramApiKey: "",
-      });
-    } catch (error) {
-      setKeyError(error instanceof Error ? error.message : t("清空 Key 失败", "Failed to clear key"));
-    } finally {
-      setKeyLoading(false);
-    }
-  }
-
-  async function handleLlmSave(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!isAuthenticated) {
-      openAuthModal("login");
-      return;
-    }
-
-    if (isBlank(llmForm.baseUrl) || isBlank(llmForm.apiKey) || isBlank(llmForm.model)) {
-      setLlmError(
-        t(
-          "保存时必须同时填写 LLM URL、LLM API Key 和 LLM Model。清空请点击“清空”。",
-          'LLM URL, LLM API Key, and LLM Model are all required. Use "Clear" to remove saved keys.',
-        ),
-      );
-      return;
-    }
-
-    setLlmLoading(true);
-    setLlmError("");
-
-    try {
-      const response = await fetch("/api/account/llm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(llmForm),
-      });
-      const payload = (await response.json()) as LlmKeyStatusResponse;
-      if (!response.ok) {
-        if (response.status === 401) {
-          clearDataAfterLogout();
-          openAuthModal("login");
-        }
-        throw new Error(payload.error ?? t("保存 LLM 配置失败", "Failed to save LLM settings"));
-      }
-      setLlmKeyStatus(payload.status);
-      setLlmForm({
-        baseUrl: "",
-        apiKey: "",
-        model: "",
-      });
-    } catch (error) {
-      setLlmError(
-        error instanceof Error ? error.message : t("保存 LLM 配置失败", "Failed to save LLM settings"),
-      );
-    } finally {
-      setLlmLoading(false);
-    }
-  }
-
-  async function handleLlmClear() {
-    if (!isAuthenticated) {
-      openAuthModal("login");
-      return;
-    }
-
-    setLlmLoading(true);
-    setLlmError("");
-
-    try {
-      const response = await fetch("/api/account/llm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clear: true }),
-      });
-      const payload = (await response.json()) as LlmKeyStatusResponse;
-      if (!response.ok) {
-        if (response.status === 401) {
-          clearDataAfterLogout();
-          openAuthModal("login");
-        }
-        throw new Error(payload.error ?? t("清空 LLM 配置失败", "Failed to clear LLM settings"));
-      }
-      setLlmKeyStatus(payload.status);
-      setLlmForm({
-        baseUrl: "",
-        apiKey: "",
-        model: "",
-      });
-    } catch (error) {
-      setLlmError(
-        error instanceof Error ? error.message : t("清空 LLM 配置失败", "Failed to clear LLM settings"),
-      );
-    } finally {
-      setLlmLoading(false);
-    }
   }
 
   return (
@@ -708,48 +637,60 @@ export default function DashboardPageClient({
           <section className="minimal-details-wrap">
             <details className="minimal-details">
               <summary>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <span>{t("查看历史房间", "Room History")}</span>
-                  {isAuthenticated && (
+                  {isAuthenticated ? (
                     <button
                       type="button"
                       title={t("刷新历史", "Refresh history")}
                       style={{
-                        padding: '4px',
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--muted)',
-                        cursor: dashboardLoading ? 'not-allowed' : 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
+                        padding: "4px",
+                        background: "transparent",
+                        border: "none",
+                        color: "var(--muted)",
+                        cursor: dashboardLoading ? "not-allowed" : "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
                         opacity: dashboardLoading ? 0.5 : 1,
-                        transition: 'opacity 0.2s, color 0.2s',
-                        borderRadius: '4px'
+                        transition: "opacity 0.2s, color 0.2s",
+                        borderRadius: "4px",
                       }}
-                      onMouseEnter={(e) => e.currentTarget.style.color = 'var(--foreground)'}
-                      onMouseLeave={(e) => e.currentTarget.style.color = 'var(--muted)'}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        if (!dashboardLoading) void refreshDashboard();
+                      onMouseEnter={(event) => {
+                        event.currentTarget.style.color = "var(--foreground)";
+                      }}
+                      onMouseLeave={(event) => {
+                        event.currentTarget.style.color = "var(--muted)";
+                      }}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        if (!dashboardLoading) {
+                          void refreshDashboard();
+                        }
                       }}
                       disabled={dashboardLoading}
                     >
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
-                        <path d="M21 3v5h-5"/>
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                        <path d="M21 3v5h-5" />
                       </svg>
                     </button>
-                  )}
+                  ) : null}
                 </div>
               </summary>
               {!isAuthenticated ? (
                 <div className="details-content">
                   <p className="panel-tip">
-                    {t(
-                      "登录后可查看你创建和参与的房间记录。",
-                      "Sign in to view rooms you created or joined.",
-                    )}
+                    {t("登录后可查看你创建和参与的房间记录。", "Sign in to view rooms you created or joined.")}
                   </p>
                 </div>
               ) : (
@@ -777,9 +718,7 @@ export default function DashboardPageClient({
                                       {t("成员", "Members")}: {room.participantCount} |{" "}
                                       {t("消息", "Messages")}: {room.messageCount}
                                     </p>
-                                    <p>
-                                      {t("创建", "Created")}: {formatDate(room.createdAt, language)}
-                                    </p>
+                                    <p>{t("创建", "Created")}: {formatDate(room.createdAt, language)}</p>
                                   </div>
                                   <span className="room-list-status" data-status={room.status}>
                                     {roomStatusLabel(room.status, language)}
@@ -846,15 +785,7 @@ export default function DashboardPageClient({
                       "Only usage generated under rooms you own is counted. Participants do not accumulate their own or platform usage.",
                     )}
                   </p>
-                  <div
-                    className="usage-summary-grid"
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                      gap: "16px",
-                      alignItems: "start",
-                    }}
-                  >
+                  <div className="usage-summary-grid">
                     <section className="usage-summary-column" style={{ minWidth: 0 }}>
                       <h4>{t("语音", "Voice")}</h4>
                       <div className="key-status-grid">
@@ -887,13 +818,13 @@ export default function DashboardPageClient({
             </details>
 
             <details className="minimal-details">
-              <summary>{t("配置 Provider Key", "Configure Provider Key")}</summary>
+              <summary>{t("配置 LiveKit 通话", "Configure LiveKit Transport")}</summary>
               {!isAuthenticated ? (
                 <div className="details-content">
                   <p className="panel-tip">
                     {t(
-                      "登录后可保存个人 LiveKit / Deepgram Key。",
-                      "Sign in to store your own LiveKit / Deepgram keys.",
+                      "登录后可单独保存你自己的 LiveKit 通话配置。",
+                      "Sign in to store your own LiveKit transport settings separately.",
                     )}
                   </p>
                 </div>
@@ -901,79 +832,217 @@ export default function DashboardPageClient({
                 <div className="details-content">
                   <p className="panel-tip">
                     {t("当前状态", "Current status")}:{" "}
-                    {keyStatus?.configured ? t("已配置", "Configured") : t("未配置", "Not configured")}。
+                    {configuredLabel(Boolean(livekitStatus?.configured), language)}。
                     {t(
-                      "仅保存到你的账户，不影响其他用户。保存时四项必须同时填写；若要删除，请点击“清空”。",
-                      'Saved only to your account, without affecting other users. All four fields are required when saving; use "Clear" to remove them.',
+                      "这一组配置只负责 LiveKit 通话接入，与实时转录平台分开保存。启用用户 Key 模式时，房主必须同时具备完整的 LiveKit 与默认转录工具配置，系统不会混用平台和个人 Key。",
+                      "These credentials only cover LiveKit transport and are stored separately from realtime transcription providers. In user-key modes, the room owner must have both a complete LiveKit bundle and a configured default transcription provider. Platform and personal keys are never mixed.",
                     )}
                   </p>
                   <div className="key-status-grid">
                     <span>
-                      LiveKit URL: {keyStatus?.livekitUrlMask ?? t("未配置", "Not configured")}
+                      LiveKit URL: {livekitStatus?.livekitUrlMask ?? t("未配置", "Not configured")}
                     </span>
                     <span>
-                      LiveKit API Key: {keyStatus?.livekitApiKeyMask ?? t("未配置", "Not configured")}
+                      LiveKit API Key: {livekitStatus?.livekitApiKeyMask ?? t("未配置", "Not configured")}
                     </span>
                     <span>
                       LiveKit API Secret:{" "}
-                      {keyStatus?.livekitApiSecretMask ?? t("未配置", "Not configured")}
-                    </span>
-                    <span>
-                      Deepgram API Key: {keyStatus?.deepgramApiKeyMask ?? t("未配置", "Not configured")}
+                      {livekitStatus?.livekitApiSecretMask ?? t("未配置", "Not configured")}
                     </span>
                   </div>
-                  <form className="key-form" onSubmit={handleKeySave}>
+                  <form className="key-form" onSubmit={saveLivekit}>
                     <input
-                      value={keyForm.livekitUrl}
+                      value={livekitForm.livekitUrl}
                       onChange={(event) =>
-                        setKeyForm((current) => ({ ...current, livekitUrl: event.target.value }))
+                        setLivekitForm((current) => ({ ...current, livekitUrl: event.target.value }))
                       }
                       placeholder={t("LIVEKIT_URL（必填）", "LIVEKIT_URL (required)")}
                     />
                     <input
-                      value={keyForm.livekitApiKey}
+                      value={livekitForm.livekitApiKey}
                       onChange={(event) =>
-                        setKeyForm((current) => ({ ...current, livekitApiKey: event.target.value }))
+                        setLivekitForm((current) => ({
+                          ...current,
+                          livekitApiKey: event.target.value,
+                        }))
                       }
                       placeholder="LIVEKIT_API_KEY"
                     />
                     <input
                       type="password"
-                      value={keyForm.livekitApiSecret}
+                      value={livekitForm.livekitApiSecret}
                       onChange={(event) =>
-                        setKeyForm((current) => ({ ...current, livekitApiSecret: event.target.value }))
+                        setLivekitForm((current) => ({
+                          ...current,
+                          livekitApiSecret: event.target.value,
+                        }))
                       }
                       placeholder="LIVEKIT_API_SECRET"
                     />
-                    <input
-                      type="password"
-                      value={keyForm.deepgramApiKey}
-                      onChange={(event) =>
-                        setKeyForm((current) => ({ ...current, deepgramApiKey: event.target.value }))
-                      }
-                      placeholder="DEEPGRAM_API_KEY"
-                    />
                     <div className="key-form-actions">
-                      <button type="submit" className="primary-btn" disabled={keyLoading}>
-                        {keyLoading ? t("保存中...", "Saving...") : t("保存 Key", "Save Key")}
+                      <button type="submit" className="primary-btn" disabled={livekitLoading}>
+                        {livekitLoading ? t("保存中...", "Saving...") : t("保存配置", "Save Settings")}
                       </button>
-                      <button type="button" className="ghost-btn" disabled={keyLoading} onClick={() => void handleKeyClear()}>
+                      <button
+                        type="button"
+                        className="ghost-btn"
+                        disabled={livekitLoading}
+                        onClick={() => void clearLivekit()}
+                      >
                         {t("清空", "Clear")}
                       </button>
                       <button
                         type="button"
                         className="ghost-btn"
-                        disabled={keyLoading}
-                        onClick={() => void refreshKeyStatus().catch((error) => setKeyError((error as Error).message))}
+                        disabled={livekitLoading}
+                        onClick={() =>
+                          void refreshLivekitStatus().catch((error) =>
+                            setLivekitError((error as Error).message),
+                          )
+                        }
                       >
                         {t("刷新状态", "Refresh status")}
                       </button>
                     </div>
                   </form>
-                  {keyError ? <p className="form-error">{keyError}</p> : null}
+                  {livekitError ? <p className="form-error">{livekitError}</p> : null}
                 </div>
               )}
             </details>
+
+            <details className="minimal-details">
+              <summary>{t("配置实时转录", "Configure Realtime Transcription")}</summary>
+              {!isAuthenticated ? (
+                <div className="details-content">
+                  <p className="panel-tip">
+                    {t(
+                      "登录后可分别保存不同转录平台的 Key，并设置自己的默认实时转录工具。",
+                      "Sign in to store different transcription provider keys separately and choose your default realtime transcription tool.",
+                    )}
+                  </p>
+                </div>
+              ) : (
+                <div className="details-content">
+                  <p className="panel-tip">
+                    {t("默认转录工具", "Default provider")}:{" "}
+                    {transcriptionStatus?.defaultProvider
+                      ? providerLabel(transcriptionStatus.defaultProvider, language)
+                      : t("未设置", "Not selected")}
+                    。
+                    {t(
+                      "房主在用户 Key 模式（true / full）下，必须同时拥有完整的 LiveKit 配置和默认转录工具配置，否则开启语音实时转录时会直接报错。平台 Key 与用户自己的 Key 不会混合使用。",
+                      "When user-key mode is enabled (true / full), the room owner must have both a complete LiveKit setup and a configured default transcription provider, otherwise live voice transcription fails immediately. Platform keys and user keys are never mixed.",
+                    )}
+                  </p>
+                  <div className="key-form-actions">
+                    <button
+                      type="button"
+                      className="ghost-btn"
+                      disabled={transcriptionLoading !== null}
+                      onClick={() =>
+                        void refreshTranscriptionStatus().catch((error) =>
+                          setTranscriptionError((error as Error).message),
+                        )
+                      }
+                    >
+                      {t("刷新状态", "Refresh status")}
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-btn"
+                      disabled={transcriptionLoading !== null || !transcriptionStatus?.defaultProvider}
+                      onClick={() => void setDefaultProvider(null)}
+                    >
+                      {t("清除默认值", "Clear default")}
+                    </button>
+                  </div>
+
+                  {PROVIDERS.map((provider) => {
+                    const providerStatus = providerMap.get(provider);
+                    const isDefault = transcriptionStatus?.defaultProvider === provider;
+
+                    return (
+                      <section
+                        key={provider}
+                        className="key-status-grid"
+                        style={{ gap: "12px", background: "var(--card)", border: "1px solid var(--line)" }}
+                      >
+                        <div>
+                          <h4 style={{ margin: 0 }}>{providerLabel(provider, language)}</h4>
+                          <p className="panel-tip" style={{ marginTop: "6px" }}>
+                            {t("当前状态", "Current status")}:{" "}
+                            {configuredLabel(Boolean(providerStatus?.configured), language)}
+                          </p>
+                          <p className="panel-tip" style={{ marginTop: "6px" }}>
+                            API Key: {providerStatus?.credentialMask ?? t("未配置", "Not configured")}
+                          </p>
+                          {provider === "dashscope" ? (
+                            <p className="panel-tip" style={{ marginTop: "6px" }}>
+                              {t("默认模型", "Default model")}: {DASHSCOPE_DEFAULT_MODEL}
+                            </p>
+                          ) : null}
+                        </div>
+                        <form className="key-form" onSubmit={(event) => void saveTranscription(event, provider)}>
+                          <input
+                            type="password"
+                            autoComplete="new-password"
+                            value={transcriptionForm[provider]}
+                            onChange={(event) =>
+                              setTranscriptionForm((current) => ({
+                                ...current,
+                                [provider]: event.target.value,
+                              }))
+                            }
+                            placeholder={provider === "dashscope" ? "DASHSCOPE_API_KEY" : "DEEPGRAM_API_KEY"}
+                          />
+                          {provider === "dashscope" ? (
+                            <p className="panel-tip" style={{ marginTop: 0 }}>
+                              {t("请输入百炼 API Key，通常以 sk- 开头。", "Use a DashScope API key, which usually starts with sk-.")}
+                            </p>
+                          ) : null}
+                          <div className="key-form-actions">
+                            <button
+                              type="submit"
+                              className="primary-btn"
+                              disabled={transcriptionLoading !== null}
+                            >
+                              {transcriptionLoading === `save:${provider}`
+                                ? t("保存中...", "Saving...")
+                                : t("保存配置", "Save Settings")}
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-btn"
+                              disabled={transcriptionLoading !== null}
+                              onClick={() => void clearTranscription(provider)}
+                            >
+                              {transcriptionLoading === `clear:${provider}`
+                                ? t("清空中...", "Clearing...")
+                                : t("清空", "Clear")}
+                            </button>
+                            <button
+                              type="button"
+                              className={isDefault ? "primary-btn" : "ghost-btn"}
+                              disabled={transcriptionLoading !== null || !providerStatus?.configured}
+                              onClick={() => void setDefaultProvider(provider)}
+                            >
+                              {transcriptionLoading === `default:${provider}`
+                                ? t("保存中...", "Saving...")
+                                : isDefault
+                                  ? t("默认工具", "Default")
+                                  : t("设为默认", "Set default")}
+                            </button>
+                          </div>
+                        </form>
+                      </section>
+                    );
+                  })}
+
+                  {transcriptionError ? <p className="form-error">{transcriptionError}</p> : null}
+                </div>
+              )}
+            </details>
+
             <details className="minimal-details">
               <summary>{t("配置分析 LLM", "Configure Analysis LLM")}</summary>
               {!isAuthenticated ? (
@@ -989,29 +1058,21 @@ export default function DashboardPageClient({
                 <div className="details-content">
                   <p className="panel-tip">
                     {t("当前状态", "Current status")}:{" "}
-                    {llmKeyStatus?.configured ? t("已配置", "Configured") : t("未配置", "Not configured")}。
+                    {configuredLabel(Boolean(llmKeyStatus?.configured), language)}。
                     {t(
-                      "这一组配置与 LiveKit/Deepgram 分开保存，仅在 `CONVERSATION_LLM_PROVIDER=openai-compatible` 时用于房间分析。",
-                      "This set is stored separately from LiveKit/Deepgram and is used for room analysis only when `CONVERSATION_LLM_PROVIDER=openai-compatible`.",
+                      "这一组配置与 LiveKit/转录配置分开保存，仅在 `CONVERSATION_LLM_PROVIDER=openai-compatible` 时用于房间分析。",
+                      "This set is stored separately from LiveKit/transcription settings and is used for room analysis only when `CONVERSATION_LLM_PROVIDER=openai-compatible`.",
                     )}
                   </p>
                   <div className="key-status-grid">
-                    <span>
-                      LLM URL: {llmKeyStatus?.baseUrlMask ?? t("未配置", "Not configured")}
-                    </span>
-                    <span>
-                      LLM API Key: {llmKeyStatus?.apiKeyMask ?? t("未配置", "Not configured")}
-                    </span>
-                    <span>
-                      LLM Model: {llmKeyStatus?.model ?? t("未配置", "Not configured")}
-                    </span>
+                    <span>LLM URL: {llmKeyStatus?.baseUrlMask ?? t("未配置", "Not configured")}</span>
+                    <span>LLM API Key: {llmKeyStatus?.apiKeyMask ?? t("未配置", "Not configured")}</span>
+                    <span>LLM Model: {llmKeyStatus?.model ?? t("未配置", "Not configured")}</span>
                   </div>
-                  <form className="key-form" onSubmit={handleLlmSave}>
+                  <form className="key-form" onSubmit={saveLlm}>
                     <input
                       value={llmForm.baseUrl}
-                      onChange={(event) =>
-                        setLlmForm((current) => ({ ...current, baseUrl: event.target.value }))
-                      }
+                      onChange={(event) => setLlmForm((current) => ({ ...current, baseUrl: event.target.value }))}
                       placeholder={t(
                         "CONVERSATION_LLM_OPENAI_BASE_URL（必填）",
                         "CONVERSATION_LLM_OPENAI_BASE_URL (required)",
@@ -1020,27 +1081,23 @@ export default function DashboardPageClient({
                     <input
                       type="password"
                       value={llmForm.apiKey}
-                      onChange={(event) =>
-                        setLlmForm((current) => ({ ...current, apiKey: event.target.value }))
-                      }
+                      onChange={(event) => setLlmForm((current) => ({ ...current, apiKey: event.target.value }))}
                       placeholder="CONVERSATION_LLM_OPENAI_API_KEY"
                     />
                     <input
                       value={llmForm.model}
-                      onChange={(event) =>
-                        setLlmForm((current) => ({ ...current, model: event.target.value }))
-                      }
+                      onChange={(event) => setLlmForm((current) => ({ ...current, model: event.target.value }))}
                       placeholder="CONVERSATION_LLM_OPENAI_MODEL"
                     />
                     <div className="key-form-actions">
                       <button type="submit" className="primary-btn" disabled={llmLoading}>
-                        {llmLoading ? t("保存中...", "Saving...") : t("保存 LLM 配置", "Save LLM Settings")}
+                        {llmLoading ? t("保存中...", "Saving...") : t("保存配置", "Save Settings")}
                       </button>
                       <button
                         type="button"
                         className="ghost-btn"
                         disabled={llmLoading}
-                        onClick={() => void handleLlmClear()}
+                        onClick={() => void clearLlm()}
                       >
                         {t("清空", "Clear")}
                       </button>
@@ -1049,7 +1106,7 @@ export default function DashboardPageClient({
                         className="ghost-btn"
                         disabled={llmLoading}
                         onClick={() =>
-                          void refreshLlmKeyStatus().catch((error) => setLlmError((error as Error).message))
+                          void refreshLlmStatus().catch((error) => setLlmError((error as Error).message))
                         }
                       >
                         {t("刷新状态", "Refresh status")}
@@ -1110,12 +1167,7 @@ export default function DashboardPageClient({
               <input
                 id="auth-username"
                 value={authForm.username}
-                onChange={(event) =>
-                  setAuthForm((current) => ({
-                    ...current,
-                    username: event.target.value,
-                  }))
-                }
+                onChange={(event) => setAuthForm((current) => ({ ...current, username: event.target.value }))}
                 placeholder={t("3-32 位：小写字母/数字/_", "3-32 chars: lowercase letters/numbers/_")}
                 autoComplete="username"
               />
@@ -1125,12 +1177,7 @@ export default function DashboardPageClient({
                 id="auth-password"
                 type="password"
                 value={authForm.password}
-                onChange={(event) =>
-                  setAuthForm((current) => ({
-                    ...current,
-                    password: event.target.value,
-                  }))
-                }
+                onChange={(event) => setAuthForm((current) => ({ ...current, password: event.target.value }))}
                 placeholder={t("至少 6 位", "At least 6 characters")}
                 autoComplete={authMode === "login" ? "current-password" : "new-password"}
               />

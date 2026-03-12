@@ -1,5 +1,5 @@
 import type { RuntimeSource } from "@/lib/llm-provider-keys";
-import type { KeySource } from "@/lib/provider-keys";
+import type { KeySource } from "@/lib/provider-sources";
 import { prisma } from "@/lib/prisma";
 
 export type UserUsageSummary = {

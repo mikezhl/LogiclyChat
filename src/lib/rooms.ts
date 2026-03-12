@@ -2,7 +2,7 @@ import { RoomStatus } from "@prisma/client";
 
 import { resolveConversationLlmRuntimeForOwner } from "@/lib/llm-provider-keys";
 import { buildRoomProviderModules } from "@/lib/provider-modules";
-import { resolveProviderCredentialsForOwner } from "@/lib/provider-keys";
+import { resolveRoomVoiceRuntimeForOwner } from "@/features/transcription/core/runtime";
 import { prisma } from "@/lib/prisma";
 
 export class RoomAccessError extends Error {
@@ -52,18 +52,18 @@ export async function buildRoomRuntimeInfo(roomId: string, userId: string) {
         select: { username: true },
       })
     : null;
-  const [voiceCredentials, llmRuntime] = await Promise.all([
-    resolveProviderCredentialsForOwner(room.createdById),
+  const [voiceRuntime, llmRuntime] = await Promise.all([
+    resolveRoomVoiceRuntimeForOwner(room.createdById),
     resolveConversationLlmRuntimeForOwner(room.createdById),
   ]);
   const isCreator = room.createdById === userId;
-  const providers = buildRoomProviderModules(voiceCredentials, llmRuntime, owner?.username ?? null);
+  const providers = buildRoomProviderModules(voiceRuntime, llmRuntime, owner?.username ?? null);
 
   return {
     room,
     isCreator,
     isEnded: room.status === RoomStatus.ENDED,
-    voiceCredentials,
+    voiceRuntime,
     llmRuntime,
     ownerUsername: owner?.username ?? null,
     providers,

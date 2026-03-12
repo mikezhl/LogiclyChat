@@ -7,9 +7,11 @@ import {
   TwirpError,
 } from "livekit-server-sdk";
 
+import {
+  getTranscriberAgentName,
+  isTranscriberEnabled,
+} from "@/features/transcription/core/runtime";
 import { requireEnv } from "@/lib/env";
-
-const DEFAULT_TRANSCRIBER_AGENT_NAME = "deepgram-transcriber";
 
 export type TranscriberDispatchResult = {
   enabled: boolean;
@@ -44,15 +46,6 @@ type ReleaseTranscriberDispatchOptions = {
 };
 
 const LIVEKIT_AGENT_PARTICIPANT_KIND = 4;
-
-export function isTranscriberEnabled() {
-  return process.env.LIVEKIT_TRANSCRIBER_ENABLED?.trim().toLowerCase() !== "false";
-}
-
-function getTranscriberAgentName() {
-  const configured = process.env.LIVEKIT_TRANSCRIBER_AGENT_NAME?.trim();
-  return configured && configured.length > 0 ? configured : DEFAULT_TRANSCRIBER_AGENT_NAME;
-}
 
 function isTwirpCode(error: unknown, code: string) {
   return (
@@ -159,7 +152,7 @@ export async function ensureTranscriberDispatch(
     try {
       const createdDispatch = await dispatchClient.createDispatch(roomId, agentName, {
         metadata: JSON.stringify({
-          provider: "deepgram",
+          provider: "transcriber",
           source: "jileme",
           roomId,
         }),

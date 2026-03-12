@@ -1,11 +1,12 @@
 import { RoomStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 
-import { isTranscriberEnabled } from "@/features/transcription/service/livekit-dispatch";
+import {
+  isTranscriberEnabled,
+  resolveRoomVoiceRuntimeForOwner,
+} from "@/features/transcription/core/runtime";
 import { ensureTranscriberWorker } from "@/features/transcription/runtime/worker-manager";
 import { requireApiUser } from "@/lib/auth-guard";
-import { getUserProviderKeysMode } from "@/lib/env";
-import { resolveProviderCredentialsForOwner } from "@/lib/provider-keys";
 import { assertRoomOwnerActiveOrThrow } from "@/lib/room-presence";
 import { RoomAccessError, getAccessibleRoomOrThrow } from "@/lib/rooms";
 import { normalizeRoomId } from "@/lib/room-utils";
@@ -41,28 +42,11 @@ export async function POST(_request: Request, context: RouteContext) {
       return NextResponse.json({ ok: true, skipped: "transcriber-disabled" });
     }
 
-    const credentials = await resolveProviderCredentialsForOwner(room.createdById);
-    if (!credentials.livekitUrl || !credentials.livekitApiKey || !credentials.livekitApiSecret) {
-      const mode = getUserProviderKeysMode();
+    const voiceRuntime = await resolveRoomVoiceRuntimeForOwner(room.createdById);
+    if (!voiceRuntime.ready || !voiceRuntime.transcription) {
       return NextResponse.json(
         {
-          error:
-            mode === "full"
-              ? "USER_PROVIDER_KEYS_MODE=full requires room creator to configure LiveKit URL/API key/secret"
-              : "LiveKit credentials are unavailable",
-        },
-        { status: 400 },
-      );
-    }
-
-    if (!credentials.deepgramApiKey) {
-      const mode = getUserProviderKeysMode();
-      return NextResponse.json(
-        {
-          error:
-            mode === "full"
-              ? "USER_PROVIDER_KEYS_MODE=full requires room creator to configure Deepgram API key"
-              : "Deepgram API key is unavailable for transcription",
+          error: voiceRuntime.error ?? "Voice runtime is unavailable",
         },
         { status: 400 },
       );
@@ -70,9 +54,9 @@ export async function POST(_request: Request, context: RouteContext) {
 
     const worker = await ensureTranscriberWorker(
       {
-        livekitUrl: credentials.livekitUrl,
-        livekitApiKey: credentials.livekitApiKey,
-        livekitApiSecret: credentials.livekitApiSecret,
+        livekitUrl: voiceRuntime.livekit.livekitUrl!,
+        livekitApiKey: voiceRuntime.livekit.livekitApiKey!,
+        livekitApiSecret: voiceRuntime.livekit.livekitApiSecret!,
       },
       {
         waitForReady: true,

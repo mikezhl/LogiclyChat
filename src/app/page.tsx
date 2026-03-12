@@ -1,7 +1,8 @@
 import DashboardPageClient from "@/components/dashboard-page-client";
 import { getCurrentUser } from "@/lib/auth";
+import { getUserTranscriptionSettingsStatus } from "@/features/transcription/core/user-settings";
 import { getUserLlmKeyStatus } from "@/lib/llm-provider-keys";
-import { getUserKeyStatus } from "@/lib/provider-keys";
+import { getUserLivekitCredentialStatus } from "@/lib/livekit-credentials";
 import { prisma } from "@/lib/prisma";
 import { getUserUsageSummary } from "@/lib/usage-stats";
 
@@ -64,7 +65,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         initialUser={null}
         initialCreatedRooms={[]}
         initialJoinedRooms={[]}
-        initialKeyStatus={null}
+        initialLivekitStatus={null}
+        initialTranscriptionStatus={null}
         initialLlmKeyStatus={null}
         initialUsageSummary={null}
         initialAuthMode={initialAuthMode}
@@ -73,7 +75,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     );
   }
 
-  const [createdRooms, joinedRooms, keyStatus, llmKeyStatus, usageSummary] = await Promise.all([
+  const [createdRooms, joinedRooms, livekitStatus, transcriptionStatus, llmKeyStatus, usageSummary] =
+    await Promise.all([
     prisma.room.findMany({
       where: {
         createdById: user.id,
@@ -115,10 +118,11 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         lastSeenAt: "desc",
       },
     }),
-    getUserKeyStatus(user.id),
-    getUserLlmKeyStatus(user.id),
-    getUserUsageSummary(user.id),
-  ]);
+      getUserLivekitCredentialStatus(user.id),
+      getUserTranscriptionSettingsStatus(user.id),
+      getUserLlmKeyStatus(user.id),
+      getUserUsageSummary(user.id),
+    ]);
 
   return (
     <DashboardPageClient
@@ -131,7 +135,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         ...toRoomSummary(entry.room),
         joinedAt: entry.joinedAt.toISOString(),
       }))}
-      initialKeyStatus={keyStatus}
+      initialLivekitStatus={livekitStatus}
+      initialTranscriptionStatus={transcriptionStatus}
       initialLlmKeyStatus={llmKeyStatus}
       initialUsageSummary={usageSummary}
       initialAuthMode={initialAuthMode}

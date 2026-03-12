@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { resolveRoomVoiceRuntimeForOwner } from "@/features/transcription/core/runtime";
 import { requireApiUser } from "@/lib/auth-guard";
-import { resolveProviderCredentialsForOwner } from "@/lib/provider-keys";
 import { prisma } from "@/lib/prisma";
 import {
   createOwnedRoom,
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
       await ensureRoomParticipant(room.id, user.id);
     }
 
-    const credentials = await resolveProviderCredentialsForOwner(room.createdById);
+    const voiceRuntime = await resolveRoomVoiceRuntimeForOwner(room.createdById);
 
     await prisma.roomParticipant.updateMany({
       where: {
@@ -71,17 +71,25 @@ export async function POST(request: Request) {
       status: room.status,
       endedAt: room.endedAt?.toISOString() ?? null,
       isCreator: room.createdById === user.id,
-      keyMasks: {
-        livekit: credentials.livekitApiKeyMask,
-        deepgram: credentials.deepgramApiKeyMask,
-      },
-      keySources: {
-        livekit: credentials.livekitSource,
-        deepgram: credentials.deepgramSource,
-      },
-      transcriber: {
-        ok: true,
-        details: "deferred_until_voice_join",
+      voiceRuntime: {
+        ready: voiceRuntime.ready,
+        source: voiceRuntime.source,
+        transcriberEnabled: voiceRuntime.transcriberEnabled,
+        transport: {
+          provider: "livekit",
+          source: voiceRuntime.livekit.source,
+          credentialMask: voiceRuntime.livekit.livekitApiKeyMask,
+          ready: voiceRuntime.livekit.configured,
+        },
+        transcription: voiceRuntime.transcription
+          ? {
+              provider: voiceRuntime.transcription.provider,
+              source: voiceRuntime.transcription.source,
+              credentialMask: voiceRuntime.transcription.credentialMask,
+              ready: voiceRuntime.transcription.configured,
+            }
+          : null,
+        error: voiceRuntime.error,
       },
     });
   } catch (error) {

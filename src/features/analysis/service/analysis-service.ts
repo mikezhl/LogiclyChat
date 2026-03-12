@@ -1,9 +1,9 @@
 import { MessageType, RoomStatus } from "@prisma/client";
 
 import { invokeConversationSummary, invokeRealtimeConversationAnalysis } from "@/features/analysis/llm/core";
+import { resolveRoomVoiceRuntimeForOwner } from "@/features/transcription/core/runtime";
 import { createRoomServiceClient, publishChatMessageViaLivekit } from "@/lib/livekit-chat-relay";
 import { toChatMessage } from "@/lib/messages";
-import { resolveProviderCredentialsForOwner } from "@/lib/provider-keys";
 import { prisma } from "@/lib/prisma";
 import { recordLlmUsageForOwner } from "@/lib/usage-stats";
 import { compactConversationForAnalysis } from "./dialogue-compact";
@@ -48,7 +48,8 @@ async function relayAiMessage(
   ownerUserId: string | null,
   message: ReturnType<typeof toChatMessage>,
 ) {
-  const credentials = await resolveProviderCredentialsForOwner(ownerUserId);
+  const voiceRuntime = await resolveRoomVoiceRuntimeForOwner(ownerUserId);
+  const credentials = voiceRuntime.livekit;
   if (!credentials.livekitUrl || !credentials.livekitApiKey || !credentials.livekitApiSecret) {
     return;
   }

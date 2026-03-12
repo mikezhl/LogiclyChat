@@ -3,8 +3,8 @@ import { RoomServiceClient, TwirpError } from "livekit-server-sdk";
 import { NextResponse } from "next/server";
 
 import { executeFinalSummaryForRoomRef } from "@/features/analysis/service/analysis-service";
+import { resolveRoomVoiceRuntimeForOwner } from "@/features/transcription/core/runtime";
 import { requireApiUser } from "@/lib/auth-guard";
-import { resolveProviderCredentialsForOwner } from "@/lib/provider-keys";
 import { prisma } from "@/lib/prisma";
 import { normalizeRoomId } from "@/lib/room-utils";
 
@@ -25,7 +25,8 @@ function isTwirpCode(error: unknown, code: string) {
 }
 
 async function disconnectActiveVoiceRoom(roomId: string, ownerUserId: string | null) {
-  const credentials = await resolveProviderCredentialsForOwner(ownerUserId);
+  const voiceRuntime = await resolveRoomVoiceRuntimeForOwner(ownerUserId);
+  const credentials = voiceRuntime.livekit;
   if (!credentials.livekitUrl || !credentials.livekitApiKey || !credentials.livekitApiSecret) {
     console.warn("Skip LiveKit room disconnect due to missing credentials", {
       roomId,

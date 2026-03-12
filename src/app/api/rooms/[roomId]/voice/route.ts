@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 
+import { resolveRoomVoiceRuntimeForOwner } from "@/features/transcription/core/runtime";
+import { releaseTranscriberDispatchIfIdle } from "@/features/transcription/service/livekit-dispatch";
 import { requireApiUser } from "@/lib/auth-guard";
-import { resolveProviderCredentialsForOwner } from "@/lib/provider-keys";
 import { RoomAccessError, getAccessibleRoomOrThrow } from "@/lib/rooms";
 import { normalizeRoomId } from "@/lib/room-utils";
-import { releaseTranscriberDispatchIfIdle } from "@/features/transcription/service/livekit-dispatch";
 
 type RouteContext = {
   params: Promise<{
@@ -33,17 +33,17 @@ export async function POST(request: Request, context: RouteContext) {
 
     const room = await getAccessibleRoomOrThrow(roomId, user.id);
     const body = (await request.json().catch(() => ({}))) as ReleaseVoiceRuntimeRequest;
-    const credentials = await resolveProviderCredentialsForOwner(room.createdById);
+    const voiceRuntime = await resolveRoomVoiceRuntimeForOwner(room.createdById);
 
-    if (!credentials.livekitUrl || !credentials.livekitApiKey || !credentials.livekitApiSecret) {
-      return NextResponse.json({ error: "LiveKit credentials are unavailable" }, { status: 400 });
+    if (!voiceRuntime.livekit.livekitUrl || !voiceRuntime.livekit.livekitApiKey || !voiceRuntime.livekit.livekitApiSecret) {
+      return NextResponse.json({ error: voiceRuntime.error ?? "LiveKit credentials are unavailable" }, { status: 400 });
     }
 
     const result = await releaseTranscriberDispatchIfIdle(roomId, {
       credentials: {
-        livekitUrl: credentials.livekitUrl,
-        livekitApiKey: credentials.livekitApiKey,
-        livekitApiSecret: credentials.livekitApiSecret,
+        livekitUrl: voiceRuntime.livekit.livekitUrl,
+        livekitApiKey: voiceRuntime.livekit.livekitApiKey,
+        livekitApiSecret: voiceRuntime.livekit.livekitApiSecret,
       },
       ignoredParticipantIdentity: body.participantIdentity,
     });

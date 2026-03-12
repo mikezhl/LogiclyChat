@@ -4,15 +4,15 @@ import { NextResponse } from "next/server";
 
 import { ensureConversationAnalysisWorker } from "@/features/analysis/runtime/worker-manager";
 import {
-  ensureTranscriberDispatch,
   isTranscriberEnabled,
-} from "@/features/transcription/service/livekit-dispatch";
+  resolveRoomVoiceRuntimeForOwner,
+} from "@/features/transcription/core/runtime";
+import { ensureTranscriberDispatch } from "@/features/transcription/service/livekit-dispatch";
 import { ensureTranscriberWorker } from "@/features/transcription/runtime/worker-manager";
 import { requireApiUser } from "@/lib/auth-guard";
-import { isRoomSpeakerSwitchEnabled, optionalEnv } from "@/lib/env";
+import { isRoomSpeakerSwitchEnabled } from "@/lib/env";
 import { resolveConversationLlmRuntimeForOwner } from "@/lib/llm-provider-keys";
 import { buildRoomProviderModules } from "@/lib/provider-modules";
-import { resolveProviderCredentialsForOwner } from "@/lib/provider-keys";
 import { prisma } from "@/lib/prisma";
 import { assertRoomOwnerActiveOrThrow } from "@/lib/room-presence";
 import { RoomAccessError, getAccessibleRoomOrThrow } from "@/lib/rooms";
@@ -61,32 +61,25 @@ export async function POST(request: Request) {
         })
       : null;
 
-    const [credentials, llmRuntime] = await Promise.all([
-      resolveProviderCredentialsForOwner(room.createdById),
+    const [voiceRuntime, llmRuntime] = await Promise.all([
+      resolveRoomVoiceRuntimeForOwner(room.createdById),
       resolveConversationLlmRuntimeForOwner(room.createdById),
     ]);
-    if (!credentials.livekitUrl || !credentials.livekitApiKey || !credentials.livekitApiSecret) {
-      const mode = optionalEnv("USER_PROVIDER_KEYS_MODE") ?? "true";
+    const livekitCredentials = voiceRuntime.livekit;
+    if (!livekitCredentials.livekitUrl || !livekitCredentials.livekitApiKey || !livekitCredentials.livekitApiSecret) {
       return NextResponse.json(
         {
-          error:
-            mode === "full"
-              ? "USER_PROVIDER_KEYS_MODE=full requires room creator to configure LiveKit URL/API key/secret"
-              : "LiveKit credentials are unavailable",
+          error: voiceRuntime.error ?? "LiveKit credentials are unavailable",
         },
         { status: 400 },
       );
     }
 
     const transcriberEnabled = isTranscriberEnabled();
-    if (isVoiceMode && transcriberEnabled && !credentials.deepgramApiKey) {
-      const mode = optionalEnv("USER_PROVIDER_KEYS_MODE") ?? "true";
+    if (transcriberEnabled && !voiceRuntime.ready) {
       return NextResponse.json(
         {
-          error:
-            mode === "full"
-              ? "USER_PROVIDER_KEYS_MODE=full requires room creator to configure Deepgram API key"
-              : "Deepgram API key is unavailable for transcription",
+          error: voiceRuntime.error ?? "Voice runtime is unavailable",
         },
         { status: 400 },
       );
@@ -95,9 +88,9 @@ export async function POST(request: Request) {
     if (isVoiceMode && transcriberEnabled) {
       await ensureTranscriberWorker(
         {
-          livekitUrl: credentials.livekitUrl,
-          livekitApiKey: credentials.livekitApiKey,
-          livekitApiSecret: credentials.livekitApiSecret,
+          livekitUrl: voiceRuntime.livekit.livekitUrl!,
+          livekitApiKey: voiceRuntime.livekit.livekitApiKey!,
+          livekitApiSecret: voiceRuntime.livekit.livekitApiSecret!,
         },
         {
           waitForReady: true,
@@ -134,14 +127,10 @@ export async function POST(request: Request) {
 
     if (isVoiceMode && transcriberEnabled) {
       try {
-        const dispatchResult = await ensureTranscriberDispatch(roomId, {
-          livekitUrl: credentials.livekitUrl,
-          livekitApiKey: credentials.livekitApiKey,
-          livekitApiSecret: credentials.livekitApiSecret,
-        });
-        console.info("Token route transcriber dispatch result:", {
-          roomId,
-          dispatchResult,
+        await ensureTranscriberDispatch(roomId, {
+          livekitUrl: voiceRuntime.livekit.livekitUrl!,
+          livekitApiKey: voiceRuntime.livekit.livekitApiKey!,
+          livekitApiSecret: voiceRuntime.livekit.livekitApiSecret!,
         });
       } catch (dispatchError) {
         console.error("Token route failed to dispatch transcriber agent:", {
@@ -156,7 +145,7 @@ export async function POST(request: Request) {
       username: user.username,
       mode: speakerMode,
     });
-    const accessToken = new AccessToken(credentials.livekitApiKey, credentials.livekitApiSecret, {
+    const accessToken = new AccessToken(livekitCredentials.livekitApiKey, livekitCredentials.livekitApiSecret, {
       identity: speakerProfile.participantIdentity,
       name: speakerProfile.displayName,
       ttl: "4h",
@@ -171,14 +160,14 @@ export async function POST(request: Request) {
     });
 
     const token = await accessToken.toJwt();
-    const providers = buildRoomProviderModules(credentials, llmRuntime, owner?.username ?? null);
+    const providers = buildRoomProviderModules(voiceRuntime, llmRuntime, owner?.username ?? null);
 
     return NextResponse.json({
       token,
-      livekitUrl: credentials.livekitUrl,
+      livekitUrl: livekitCredentials.livekitUrl,
       identity: speakerProfile.participantIdentity,
       displayName: speakerProfile.displayName,
-      transcriberEnabled: isVoiceMode ? transcriberEnabled : false,
+      transcriberEnabled: voiceRuntime.transcriberEnabled,
       connectionMode,
       providers,
     });
