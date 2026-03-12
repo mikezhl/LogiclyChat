@@ -4,6 +4,7 @@ import { invokeConversationSummary, invokeRealtimeConversationAnalysis } from "@
 import { resolveRoomVoiceRuntimeForOwner } from "@/features/transcription/core/runtime";
 import { createRoomServiceClient, publishChatMessageViaLivekit } from "@/lib/livekit-chat-relay";
 import { toChatMessage } from "@/lib/messages";
+import { getRoomNameFromAnalysisPayload } from "@/lib/room-name";
 import { prisma } from "@/lib/prisma";
 import { recordLlmUsageForOwner } from "@/lib/usage-stats";
 import { compactConversationForAnalysis } from "./dialogue-compact";
@@ -91,6 +92,7 @@ export async function executeRealtimeAnalysisForRoomRef(roomRefId: string): Prom
     select: {
       id: true,
       roomId: true,
+      name: true,
       status: true,
       createdById: true,
     },
@@ -133,6 +135,7 @@ export async function executeRealtimeAnalysisForRoomRef(roomRefId: string): Prom
     source: llmResult.source,
     totalTokens: llmResult.usage?.totalTokens,
   });
+  const roomName = getRoomNameFromAnalysisPayload(llmResult.content);
 
   const externalRef = `analysis:realtime:${roomRefId}:${compacted.latestCurrentMessageId}`;
   const content = JSON.stringify(llmResult.content, null, 2);
@@ -172,6 +175,17 @@ export async function executeRealtimeAnalysisForRoomRef(roomRefId: string): Prom
     },
   });
 
+  if (roomName && roomName !== room.name) {
+    await prisma.room.update({
+      where: {
+        id: room.id,
+      },
+      data: {
+        name: roomName,
+      },
+    });
+  }
+
   try {
     await relayAiMessage(room.roomId, room.createdById, toChatMessage(persisted));
   } catch (error) {
@@ -203,6 +217,7 @@ export async function executeFinalSummaryForRoomRef(roomRefId: string): Promise<
     select: {
       id: true,
       roomId: true,
+      name: true,
       createdById: true,
     },
   });
@@ -233,6 +248,7 @@ export async function executeFinalSummaryForRoomRef(roomRefId: string): Promise<
     source: llmResult.source,
     totalTokens: llmResult.usage?.totalTokens,
   });
+  const roomName = getRoomNameFromAnalysisPayload(llmResult.content);
 
   const externalRef = `analysis:summary:${roomRefId}`;
   const content = JSON.stringify(llmResult.content, null, 2);
@@ -269,6 +285,17 @@ export async function executeFinalSummaryForRoomRef(roomRefId: string): Promise<
       lastFinalSummaryAt: new Date(),
     },
   });
+
+  if (roomName && roomName !== room.name) {
+    await prisma.room.update({
+      where: {
+        id: room.id,
+      },
+      data: {
+        name: roomName,
+      },
+    });
+  }
 
   try {
     await relayAiMessage(room.roomId, room.createdById, toChatMessage(persisted));

@@ -37,6 +37,7 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json({
       room: {
         roomId: runtimeInfo.room.roomId,
+        roomName: runtimeInfo.room.name,
         status: runtimeInfo.room.status,
         endedAt: runtimeInfo.room.endedAt?.toISOString() ?? null,
         isCreator: runtimeInfo.isCreator,

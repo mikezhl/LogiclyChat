@@ -8,6 +8,7 @@ export const runtime = "nodejs";
 
 function toRoomSummary(room: {
   roomId: string;
+  name: string | null;
   status: string;
   createdAt: Date;
   updatedAt: Date;
@@ -19,6 +20,7 @@ function toRoomSummary(room: {
 }) {
   return {
     roomId: room.roomId,
+    roomName: room.name,
     status: room.status,
     createdAt: room.createdAt.toISOString(),
     updatedAt: room.updatedAt.toISOString(),

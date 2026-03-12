@@ -6,6 +6,7 @@ import { Room, RoomEvent, Track } from "livekit-client";
 
 import { ChatMessage } from "@/lib/chat-types";
 import { decodeLivekitChatMessageEvent, LIVEKIT_CHAT_MESSAGE_TOPIC } from "@/lib/livekit-chat-event";
+import { getRoomDisplayName, getRoomNameFromAnalysisContent } from "@/lib/room-name";
 import { getRoomSpeakerDisplayName, type RoomSpeakerMode } from "@/lib/room-speaker";
 import { useUiLanguage } from "@/lib/use-ui-language";
 import { toDateLocale, type UiLanguage } from "@/lib/ui-language";
@@ -68,6 +69,7 @@ type MessagesResponse = {
 type RoomMetaResponse = {
   room: {
     roomId: string;
+    roomName: string | null;
     status: "ACTIVE" | "ENDED";
     endedAt: string | null;
     isCreator: boolean;
@@ -89,12 +91,14 @@ type RoomMetaResponse = {
 
 type RoomPageClientProps = {
   roomId: string;
+  initialRoomName: string | null;
   username: string;
 };
 
 type TranscriptionState = "idle" | "starting" | "ready" | "disabled";
 
 type RoomMetaState = {
+  roomName: string | null;
   status: "ACTIVE" | "ENDED";
   endedAt: string | null;
   isCreator: boolean;
@@ -310,7 +314,18 @@ function hasConnectedTranscriberParticipant(room: Room) {
   return [...room.remoteParticipants.values()].some((participant) => participant.isAgent);
 }
 
-export default function RoomPageClient({ roomId, username }: RoomPageClientProps) {
+function findLatestRoomNameFromMessages(messages: ChatMessage[]): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const roomName = getRoomNameFromAnalysisContent(messages[index].content);
+    if (roomName) {
+      return roomName;
+    }
+  }
+
+  return null;
+}
+
+export default function RoomPageClient({ roomId, initialRoomName, username }: RoomPageClientProps) {
   const { language } = useUiLanguage();
   const isZh = language === "zh";
   const t = useCallback((zh: string, en: string) => (isZh ? zh : en), [isZh]);
@@ -323,6 +338,7 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
   const inactivityTimerRef = useRef<number | null>(null);
 
   const [roomMeta, setRoomMeta] = useState<RoomMetaState>({
+    roomName: initialRoomName,
     status: "ACTIVE",
     endedAt: null,
     isCreator: false,
@@ -561,6 +577,7 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
     }
 
     setRoomMeta({
+      roomName: payload.room.roomName,
       status: payload.room.status,
       endedAt: payload.room.endedAt,
       isCreator: payload.room.isCreator,
@@ -1147,6 +1164,22 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
   }, [messages]);
 
   useEffect(() => {
+    const inferredRoomName = findLatestRoomNameFromMessages(messages);
+    if (!inferredRoomName) {
+      return;
+    }
+
+    setRoomMeta((current) =>
+      current.roomName === inferredRoomName
+        ? current
+        : {
+            ...current,
+            roomName: inferredRoomName,
+          },
+    );
+  }, [messages]);
+
+  useEffect(() => {
     const input = chatInputRef.current;
     if (!input) {
       return;
@@ -1208,6 +1241,7 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
   const isInitialConnectionPending =
     connectionState === "disconnected" && !hasAutoConnectAttempted && !roomInteractionBlocked;
   const roomConnectionStatusClass = isInitialConnectionPending ? "connecting" : connectionState;
+  const roomDisplayName = getRoomDisplayName(roomMeta.roomName, roomId);
   const currentSpeakerName = getRoomSpeakerDisplayName(username, speakerMode);
   const nextSpeakerMode: RoomSpeakerMode = speakerMode === "self" ? "bot" : "self";
   const nextSpeakerName = getRoomSpeakerDisplayName(username, nextSpeakerMode);
@@ -1218,7 +1252,7 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
         <header className="room-header" style={{ paddingBottom: '16px' }}>
           <div className="room-header-title">
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <h1 style={{ fontSize: '1.5rem', margin: 0 }}>{roomId}</h1>
+              <h1 style={{ fontSize: '1.5rem', margin: 0 }}>{roomDisplayName}</h1>
               <span className={`room-status ${roomConnectionStatusClass}`}>
                 {connectionState === "connected"
                   ? t("房间已连接", "Room Connected")
@@ -1236,6 +1270,11 @@ export default function RoomPageClient({ roomId, username }: RoomPageClientProps
                       : t("语音转录未开始", "Voice Transcription Not Started")}
               </span>
             </div>
+            {roomMeta.roomName ? (
+              <p className="room-header-code">
+                {t("房间代码", "Room code")}: {roomId}
+              </p>
+            ) : null}
             <div className="room-meta-row">
               <span>@{username}</span>
               {roomMeta.features.speakerSwitchEnabled ? (

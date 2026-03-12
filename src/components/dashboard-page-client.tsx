@@ -4,11 +4,13 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { getRoomDisplayName } from "@/lib/room-name";
 import { toDateLocale, type UiLanguage } from "@/lib/ui-language";
 import { useUiLanguage } from "@/lib/use-ui-language";
 
 type RoomSummary = {
   roomId: string;
+  roomName: string | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -705,27 +707,37 @@ export default function DashboardPageClient({
                           <p className="panel-tip">{t("暂无记录。", "No records.")}</p>
                         ) : (
                           <ul className="room-list">
-                            {createdRooms.map((room) => (
-                              <li key={`created-${room.roomId}`}>
-                                <Link
-                                  className="room-list-item"
-                                  href={`/${encodeURIComponent(room.roomId)}`}
-                                  aria-label={`${t("进入房间", "Open room")} ${room.roomId}`}
-                                >
-                                  <div className="room-list-item-copy">
-                                    <strong>{room.roomId}</strong>
-                                    <p>
-                                      {t("成员", "Members")}: {room.participantCount} |{" "}
-                                      {t("消息", "Messages")}: {room.messageCount}
-                                    </p>
-                                    <p>{t("创建", "Created")}: {formatDate(room.createdAt, language)}</p>
-                                  </div>
-                                  <span className="room-list-status" data-status={room.status}>
-                                    {roomStatusLabel(room.status, language)}
-                                  </span>
-                                </Link>
-                              </li>
-                            ))}
+                            {createdRooms.map((room) => {
+                              const roomDisplayName = getRoomDisplayName(room.roomName, room.roomId);
+                              const showRoomCode = Boolean(room.roomName);
+
+                              return (
+                                <li key={`created-${room.roomId}`}>
+                                  <Link
+                                    className="room-list-item"
+                                    href={`/${encodeURIComponent(room.roomId)}`}
+                                    aria-label={`${t("进入房间", "Open room")} ${roomDisplayName}${showRoomCode ? ` (${room.roomId})` : ""}`}
+                                  >
+                                    <div className="room-list-item-copy">
+                                      <strong>{roomDisplayName}</strong>
+                                      {showRoomCode ? (
+                                        <p className="room-list-code">
+                                          {t("房间代码", "Room code")}: {room.roomId}
+                                        </p>
+                                      ) : null}
+                                      <p>
+                                        {t("成员", "Members")}: {room.participantCount} |{" "}
+                                        {t("消息", "Messages")}: {room.messageCount}
+                                      </p>
+                                      <p>{t("创建", "Created")}: {formatDate(room.createdAt, language)}</p>
+                                    </div>
+                                    <span className="room-list-status" data-status={room.status}>
+                                      {roomStatusLabel(room.status, language)}
+                                    </span>
+                                  </Link>
+                                </li>
+                              );
+                            })}
                           </ul>
                         )}
                       </div>
@@ -736,30 +748,40 @@ export default function DashboardPageClient({
                           <p className="panel-tip">{t("暂无记录。", "No records.")}</p>
                         ) : (
                           <ul className="room-list">
-                            {joinedRooms.map((room) => (
-                              <li key={`joined-${room.roomId}`}>
-                                <Link
-                                  className="room-list-item"
-                                  href={`/${encodeURIComponent(room.roomId)}`}
-                                  aria-label={`${t("进入房间", "Open room")} ${room.roomId}`}
-                                >
-                                  <div className="room-list-item-copy">
-                                    <strong>{room.roomId}</strong>
-                                    <p>
-                                      {t("成员", "Members")}: {room.participantCount} |{" "}
-                                      {t("消息", "Messages")}: {room.messageCount}
-                                    </p>
-                                    <p>
-                                      {t("最近加入", "Last joined")}:{" "}
-                                      {formatDate(room.joinedAt ?? room.updatedAt, language)}
-                                    </p>
-                                  </div>
-                                  <span className="room-list-status" data-status={room.status}>
-                                    {roomStatusLabel(room.status, language)}
-                                  </span>
-                                </Link>
-                              </li>
-                            ))}
+                            {joinedRooms.map((room) => {
+                              const roomDisplayName = getRoomDisplayName(room.roomName, room.roomId);
+                              const showRoomCode = Boolean(room.roomName);
+
+                              return (
+                                <li key={`joined-${room.roomId}`}>
+                                  <Link
+                                    className="room-list-item"
+                                    href={`/${encodeURIComponent(room.roomId)}`}
+                                    aria-label={`${t("进入房间", "Open room")} ${roomDisplayName}${showRoomCode ? ` (${room.roomId})` : ""}`}
+                                  >
+                                    <div className="room-list-item-copy">
+                                      <strong>{roomDisplayName}</strong>
+                                      {showRoomCode ? (
+                                        <p className="room-list-code">
+                                          {t("房间代码", "Room code")}: {room.roomId}
+                                        </p>
+                                      ) : null}
+                                      <p>
+                                        {t("成员", "Members")}: {room.participantCount} |{" "}
+                                        {t("消息", "Messages")}: {room.messageCount}
+                                      </p>
+                                      <p>
+                                        {t("最近加入", "Last joined")}:{" "}
+                                        {formatDate(room.joinedAt ?? room.updatedAt, language)}
+                                      </p>
+                                    </div>
+                                    <span className="room-list-status" data-status={room.status}>
+                                      {roomStatusLabel(room.status, language)}
+                                    </span>
+                                  </Link>
+                                </li>
+                              );
+                            })}
                           </ul>
                         )}
                       </div>

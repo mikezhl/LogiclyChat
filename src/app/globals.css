@@ -349,12 +349,21 @@ a:focus-visible {
 }
 
 .room-list-item strong {
+  display: block;
   font-size: 1rem;
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .room-list-item-copy {
   min-width: 0;
+}
+
+.room-list-code {
+  font-size: 0.82rem;
+  letter-spacing: 0.01em;
 }
 
 .room-list-item p {
@@ -703,6 +712,13 @@ a:focus-visible {
   margin: 6px 0 0;
   color: var(--muted);
   font-size: 0.95rem;
+}
+
+.room-header-code {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  letter-spacing: 0.01em;
 }
 
 .room-meta-row {

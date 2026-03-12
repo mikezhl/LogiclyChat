@@ -32,5 +32,5 @@ export default async function RoomPage({ params }: RoomPageProps) {
     redirect("/");
   }
 
-  return <RoomPageClient roomId={room.roomId} username={user.username} />;
+  return <RoomPageClient roomId={room.roomId} initialRoomName={room.name} username={user.username} />;
 }
