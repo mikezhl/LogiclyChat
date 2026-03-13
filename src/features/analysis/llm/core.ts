@@ -5,6 +5,7 @@ import {
 import { MockConversationLlmProvider } from "./mock-llm";
 import { OpenAiCompatibleConversationLlmProvider } from "./openai-compatible-llm";
 import { resolvePromptTemplate } from "./prompts";
+import { buildEmptyRealtimeAnalysisContent } from "./realtime-analysis";
 import {
   ConversationLlmProvider,
   ConversationLlmJson,
@@ -45,13 +46,7 @@ function buildFallbackConversationContent(
   errorMessage: string,
 ): ConversationLlmJson {
   if (mode === "realtime") {
-    return {
-      type: "realtime-analysis",
-      focus: "",
-      insights: [],
-      suggestions: [],
-      error: errorMessage,
-    };
+    return buildEmptyRealtimeAnalysisContent(errorMessage);
   }
 
   return {

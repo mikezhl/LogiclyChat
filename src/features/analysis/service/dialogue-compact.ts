@@ -16,6 +16,7 @@ export type CompactedConversationBundle = {
   currentRoundConversation: string;
   fullConversation: string;
   hasCurrentRound: boolean;
+  currentRoundActiveSpeakerLabels: string[];
   latestCurrentMessageId: string | null;
   latestCurrentMessageAt: Date | null;
 };
@@ -155,6 +156,10 @@ function turnsToText(turns: CompactedTurn[]) {
   return turns.map((turn) => `${turn.speakerLabel}: ${turn.text}`).join("\n");
 }
 
+function getActiveSpeakerLabels(turns: CompactedTurn[]) {
+  return [...new Set(turns.map((turn) => turn.speakerLabel))];
+}
+
 function resolveSplitIndex(messages: ConversationMessageForAnalysis[], cursor?: ConversationCursor) {
   if (!cursor?.lastRealtimeMessageId && !cursor?.lastRealtimeMessageAt) {
     return 0;
@@ -222,6 +227,7 @@ export function compactConversationForAnalysis(
     currentRoundConversation: turnsToText(currentTurns),
     fullConversation: turnsToText(fullTurns),
     hasCurrentRound: currentTurns.length > 0,
+    currentRoundActiveSpeakerLabels: getActiveSpeakerLabels(currentTurns),
     latestCurrentMessageId: latestCurrentMessage?.id ?? null,
     latestCurrentMessageAt: latestCurrentMessage?.createdAt ?? null,
   };

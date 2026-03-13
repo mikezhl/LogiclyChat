@@ -12,6 +12,10 @@ import {
 } from "./errors";
 
 type OpenAiCompatibleResponse = {
+  message?: string;
+  type?: string;
+  param?: string | null;
+  code?: string | null;
   choices?: Array<{
     message?: {
       content?:
@@ -114,7 +118,16 @@ function normalizeUsage(
 async function readErrorMessage(response: Response) {
   try {
     const payload = (await response.json()) as OpenAiCompatibleResponse;
-    return payload.error?.message ?? `${response.status} ${response.statusText}`;
+    const message = payload.error?.message ?? payload.message;
+    const metadata = [payload.type, payload.code, payload.param]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .join(", ");
+
+    if (message && metadata) {
+      return `${message} (${metadata})`;
+    }
+
+    return message ?? `${response.status} ${response.statusText}`;
   } catch {
     const text = await response.text().catch(() => "");
     return text || `${response.status} ${response.statusText}`;

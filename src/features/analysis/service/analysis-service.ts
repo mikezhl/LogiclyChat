@@ -1,6 +1,10 @@
 import { MessageType, RoomStatus } from "@prisma/client";
 
 import { invokeConversationSummary, invokeRealtimeConversationAnalysis } from "@/features/analysis/llm/core";
+import {
+  isMockRealtimeAnalysisDebugPayload,
+  normalizeRealtimeAnalysisContent,
+} from "@/features/analysis/llm/realtime-analysis";
 import { resolveRoomVoiceRuntimeForOwner } from "@/features/transcription/core/runtime";
 import { createRoomServiceClient, publishChatMessageViaLivekit } from "@/lib/livekit-chat-relay";
 import { toChatMessage } from "@/lib/messages";
@@ -135,10 +139,15 @@ export async function executeRealtimeAnalysisForRoomRef(roomRefId: string): Prom
     source: llmResult.source,
     totalTokens: llmResult.usage?.totalTokens,
   });
-  const roomName = getRoomNameFromAnalysisPayload(llmResult.content);
+  const normalizedRealtimeContent = isMockRealtimeAnalysisDebugPayload(llmResult.content)
+    ? llmResult.content
+    : normalizeRealtimeAnalysisContent(llmResult.content, {
+        activeSpeakerLabels: compacted.currentRoundActiveSpeakerLabels,
+      });
+  const roomName = getRoomNameFromAnalysisPayload(normalizedRealtimeContent);
 
   const externalRef = `analysis:realtime:${roomRefId}:${compacted.latestCurrentMessageId}`;
-  const content = JSON.stringify(llmResult.content, null, 2);
+  const content = JSON.stringify(normalizedRealtimeContent, null, 2);
 
   const persisted = await prisma.message.upsert({
     where: {
