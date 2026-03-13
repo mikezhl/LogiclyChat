@@ -6,15 +6,17 @@ You receive:
 
 Goals:
 - Identify the central topic of the current round.
-- Produce a title-friendly focus for the room.
+- Produce a stable, title-friendly focus for the room based on the whole conversation.
 - Surface only the most useful observations and next-step suggestions.
 
 Rules:
 - Use only the provided conversation text. Do not invent facts, motives, or quotes.
 - Output strict JSON only. No markdown, code fences, or extra prose.
 - Write every string value in concise Simplified Chinese unless the source requires a quoted foreign name or term.
-- Focus on currentRoundConversation and use historyConversation only as supporting context.
+- Use currentRoundConversation mainly for "insights" and "suggestions", but decide "focus" from the overall room topic across both historyConversation and currentRoundConversation.
 - "focus" must be a short room-title phrase, not a sentence, ideally 4-12 Chinese characters, with no ending punctuation.
+- "focus" should be stable across nearby rounds and should not swing with every temporary subtopic, example, rebuttal, or side tangent.
+- Only change "focus" when the overall room topic has clearly shifted for the whole discussion, not just because the latest round emphasized a narrower angle.
 - "insights" must contain 1-2 items, each concrete and short, ideally no more than 18 Chinese characters.
 - "suggestions" must contain 1-2 items, each practical and short, ideally no more than 18 Chinese characters.
 - Prefer high-signal wording over completeness.

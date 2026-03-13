@@ -12,6 +12,7 @@ Rules:
 - Output strict JSON only. No markdown, code fences, or extra prose.
 - Write every string value in concise Simplified Chinese unless quoting a source term.
 - "focus" must be a short room-title phrase, not a sentence, ideally 4-12 Chinese characters, with no ending punctuation.
+- "focus" should reflect the most stable overall theme of the whole room, not a temporary branch or late-stage tangent.
 - "insights" must contain 1-2 items, each high-signal and short, ideally no more than 18 Chinese characters.
 - Keep "overall" to one concise sentence.
 - Each list should usually contain 1-2 items unless the conversation clearly requires more.

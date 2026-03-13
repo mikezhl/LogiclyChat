@@ -3,6 +3,13 @@ import {
   ConversationLlmProvider,
   ConversationLlmProviderResult,
 } from "./types";
+import {
+  ConversationLlmRequestError,
+  extractConversationLlmRequestId,
+  isRetryableConversationLlmStatus,
+  normalizeConversationLlmError,
+  parseRetryAfterMs,
+} from "./errors";
 
 type OpenAiCompatibleResponse = {
   choices?: Array<{
@@ -118,42 +125,85 @@ export class OpenAiCompatibleConversationLlmProvider implements ConversationLlmP
   async invoke(invocation: ConversationLlmInvocation): Promise<ConversationLlmProviderResult> {
     const { runtime } = invocation;
     if (!runtime.baseUrl || !runtime.apiKey || !runtime.model) {
-      throw new Error(
+      throw new ConversationLlmRequestError(
         "OpenAI-compatible LLM requires baseUrl, apiKey and model from room owner or platform env",
+        {
+          retryable: false,
+          code: "LLM_RUNTIME_INCOMPLETE",
+        },
       );
     }
 
-    const response = await fetch(resolveChatCompletionsUrl(runtime.baseUrl), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${runtime.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: runtime.model,
-        messages: [
-          {
-            role: "system",
-            content: invocation.prompt,
-          },
-          {
-            role: "user",
-            content: buildUserMessage(invocation),
-          },
-        ],
-        temperature: 0.2,
-      }),
-      signal: AbortSignal.timeout(60_000),
-    });
+    const requestUrl = resolveChatCompletionsUrl(runtime.baseUrl);
+    let response: Response;
 
-    if (!response.ok) {
-      throw new Error(`OpenAI-compatible LLM request failed: ${await readErrorMessage(response)}`);
+    try {
+      response = await fetch(requestUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${runtime.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: runtime.model,
+          messages: [
+            {
+              role: "system",
+              content: invocation.prompt,
+            },
+            {
+              role: "user",
+              content: buildUserMessage(invocation),
+            },
+          ],
+          temperature: 0.2,
+        }),
+        signal: AbortSignal.timeout(60_000),
+      });
+    } catch (error) {
+      throw normalizeConversationLlmError(error);
     }
 
-    const payload = (await response.json()) as OpenAiCompatibleResponse;
+    if (!response.ok) {
+      const requestId = extractConversationLlmRequestId(response.headers);
+      const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
+      const providerMessage = await readErrorMessage(response);
+      const statusMessage = `${response.status} ${response.statusText}`.trim();
+      const message = providerMessage
+        ? `OpenAI-compatible LLM request failed (${statusMessage}): ${providerMessage}`
+        : `OpenAI-compatible LLM request failed (${statusMessage})`;
+
+      throw new ConversationLlmRequestError(message, {
+        retryable: isRetryableConversationLlmStatus(response.status),
+        status: response.status,
+        retryAfterMs,
+        requestId,
+      });
+    }
+
+    let payload: OpenAiCompatibleResponse;
+    try {
+      payload = (await response.json()) as OpenAiCompatibleResponse;
+    } catch (error) {
+      throw new ConversationLlmRequestError(
+        "OpenAI-compatible LLM returned invalid JSON payload",
+        {
+          retryable: false,
+          code: "LLM_RESPONSE_INVALID_JSON",
+          cause: error,
+        },
+      );
+    }
+
     const content = extractContentText(payload.choices?.[0]?.message?.content);
     if (!content) {
-      throw new Error("OpenAI-compatible LLM returned empty message content");
+      throw new ConversationLlmRequestError(
+        "OpenAI-compatible LLM returned empty message content",
+        {
+          retryable: false,
+          code: "LLM_RESPONSE_EMPTY_CONTENT",
+        },
+      );
     }
 
     try {
@@ -162,10 +212,15 @@ export class OpenAiCompatibleConversationLlmProvider implements ConversationLlmP
         usage: normalizeUsage(payload.usage),
       };
     } catch (error) {
-      throw new Error(
+      throw new ConversationLlmRequestError(
         `OpenAI-compatible LLM returned non-JSON content: ${
           error instanceof Error ? error.message : "unknown parse error"
         }`,
+        {
+          retryable: false,
+          code: "LLM_CONTENT_NON_JSON",
+          cause: error,
+        },
       );
     }
   }
