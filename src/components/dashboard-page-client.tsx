@@ -54,10 +54,16 @@ type UsageSummary = {
   voice: {
     userSeconds: number;
     platformSeconds: number;
+    platformLimitSeconds: number | null;
+    platformRemainingSeconds: number | null;
+    platformExceeded: boolean;
   };
   llm: {
     userTokens: number;
     platformTokens: number;
+    platformLimitTokens: number | null;
+    platformRemainingTokens: number | null;
+    platformExceeded: boolean;
   };
 };
 
@@ -139,6 +145,19 @@ function formatSeconds(value: number, language: UiLanguage) {
 function formatTokens(value: number, language: UiLanguage) {
   const formatter = new Intl.NumberFormat(toDateLocale(language));
   return `${formatter.format(value)} tokens`;
+}
+
+function formatVoiceUsage(value: number, language: UiLanguage) {
+  if (Math.abs(value) < 60) {
+    return formatSeconds(value, language);
+  }
+
+  const formatter = new Intl.NumberFormat(toDateLocale(language), {
+    minimumFractionDigits: value > 0 && value < 600 ? 1 : 0,
+    maximumFractionDigits: 1,
+  });
+
+  return `${formatter.format(value / 60)} min`;
 }
 
 function roomStatusLabel(status: string, language: UiLanguage) {
@@ -817,7 +836,23 @@ export default function DashboardPageClient({
                         </span>
                         <span>
                           {t("平台 Key", "Platform Key")}:{" "}
-                          {formatSeconds(usageSummary?.voice.platformSeconds ?? 0, language)}
+                          {formatVoiceUsage(usageSummary?.voice.platformSeconds ?? 0, language)}
+                          {" / "}
+                          {usageSummary?.voice.platformLimitSeconds == null
+                            ? t("无限制", "No limit")
+                            : formatVoiceUsage(usageSummary.voice.platformLimitSeconds, language)}
+                        </span>
+                        <span>
+                          {t("剩余", "Remaining")}:{" "}
+                          {usageSummary?.voice.platformRemainingSeconds == null
+                            ? t("无限制", "No limit")
+                            : formatVoiceUsage(usageSummary.voice.platformRemainingSeconds, language)}
+                        </span>
+                        <span>
+                          {t("配额状态", "Quota Status")}:{" "}
+                          {usageSummary?.voice.platformExceeded
+                            ? t("已超限", "Exceeded")
+                            : t("可用", "Available")}
                         </span>
                       </div>
                     </section>
@@ -831,6 +866,22 @@ export default function DashboardPageClient({
                         <span>
                           {t("平台 Key", "Platform Key")}:{" "}
                           {formatTokens(usageSummary?.llm.platformTokens ?? 0, language)}
+                          {" / "}
+                          {usageSummary?.llm.platformLimitTokens == null
+                            ? t("无限制", "No limit")
+                            : formatTokens(usageSummary.llm.platformLimitTokens, language)}
+                        </span>
+                        <span>
+                          {t("剩余", "Remaining")}:{" "}
+                          {usageSummary?.llm.platformRemainingTokens == null
+                            ? t("无限制", "No limit")
+                            : formatTokens(usageSummary.llm.platformRemainingTokens, language)}
+                        </span>
+                        <span>
+                          {t("配额状态", "Quota Status")}:{" "}
+                          {usageSummary?.llm.platformExceeded
+                            ? t("已超限", "Exceeded")
+                            : t("可用", "Available")}
                         </span>
                       </div>
                     </section>

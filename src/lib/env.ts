@@ -35,6 +35,8 @@ type EnvKey =
   | "CONVERSATION_LLM_OPENAI_BASE_URL"
   | "CONVERSATION_LLM_OPENAI_API_KEY"
   | "CONVERSATION_LLM_OPENAI_MODEL"
+  | "PLATFORM_TRANSCRIPTION_LIMIT_MINUTES_PER_USER"
+  | "PLATFORM_LLM_LIMIT_TOKENS_PER_USER"
   | "APP_ENCRYPTION_SECRET"
   | "SESSION_TTL_HOURS"
   | "USER_PROVIDER_KEYS_MODE"
@@ -67,6 +69,20 @@ export function getUserProviderKeysMode(): UserProviderKeysMode {
 
 export function isRoomSpeakerSwitchEnabled(): boolean {
   return parseBooleanEnv(optionalEnv("ROOM_SPEAKER_SWITCH_ENABLED"), false);
+}
+
+function normalizePositiveLimit(value: number) {
+  return value > 0 ? value : null;
+}
+
+export function getPlatformTranscriptionLimitMinutesPerUser(): number | null {
+  const limit = parseIntegerEnv(optionalEnv("PLATFORM_TRANSCRIPTION_LIMIT_MINUTES_PER_USER"), 120);
+  return normalizePositiveLimit(limit);
+}
+
+export function getPlatformLlmLimitTokensPerUser(): number | null {
+  const limit = parseIntegerEnv(optionalEnv("PLATFORM_LLM_LIMIT_TOKENS_PER_USER"), 5_000_000);
+  return normalizePositiveLimit(limit);
 }
 
 export function parseBooleanEnv(value: string | null | undefined, fallback: boolean) {

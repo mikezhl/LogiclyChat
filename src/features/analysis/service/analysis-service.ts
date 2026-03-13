@@ -7,6 +7,7 @@ import {
 } from "@/features/analysis/llm/realtime-analysis";
 import { resolveRoomVoiceRuntimeForOwner } from "@/features/transcription/core/runtime";
 import { createRoomServiceClient, publishChatMessageViaLivekit } from "@/lib/livekit-chat-relay";
+import { resolveConversationLlmRuntimeForOwner } from "@/lib/llm-provider-keys";
 import { toChatMessage } from "@/lib/messages";
 import { getRoomNameFromAnalysisPayload } from "@/lib/room-name";
 import { prisma } from "@/lib/prisma";
@@ -128,12 +129,20 @@ export async function executeRealtimeAnalysisForRoomRef(roomRefId: string): Prom
     return { executed: false, reason: "no-new-round" };
   }
 
+  const llmRuntime = await resolveConversationLlmRuntimeForOwner(room.createdById);
+  if (!llmRuntime.configured) {
+    return {
+      executed: false,
+      reason: llmRuntime.error ? "llm-runtime-blocked" : "llm-runtime-unavailable",
+    };
+  }
+
   const llmResult = await invokeRealtimeConversationAnalysis({
     roomId: room.roomId,
     speakerMap: compacted.speakerMap,
     historyConversation: compacted.historyConversation,
     currentRoundConversation: compacted.currentRoundConversation,
-  }, room.createdById);
+  }, room.createdById, llmRuntime);
   await recordLlmUsageForOwner({
     ownerUserId: room.createdById,
     source: llmResult.source,
@@ -247,11 +256,19 @@ export async function executeFinalSummaryForRoomRef(roomRefId: string): Promise<
     return { executed: false, reason: "empty-conversation" };
   }
 
+  const llmRuntime = await resolveConversationLlmRuntimeForOwner(room.createdById);
+  if (!llmRuntime.configured) {
+    return {
+      executed: false,
+      reason: llmRuntime.error ? "llm-runtime-blocked" : "llm-runtime-unavailable",
+    };
+  }
+
   const llmResult = await invokeConversationSummary({
     roomId: room.roomId,
     speakerMap: compacted.speakerMap,
     fullConversation: compacted.fullConversation,
-  }, room.createdById);
+  }, room.createdById, llmRuntime);
   await recordLlmUsageForOwner({
     ownerUserId: room.createdById,
     source: llmResult.source,

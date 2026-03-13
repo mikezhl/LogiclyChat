@@ -11,6 +11,10 @@ import {
   resolveUserOwnedLivekitCredentials,
   type ResolvedLivekitCredentials,
 } from "@/lib/livekit-credentials";
+import {
+  getPlatformTranscriptionQuotaExceededMessage,
+  getPlatformTranscriptionUsageGate,
+} from "@/lib/platform-usage-limits";
 import { type KeySource } from "@/lib/provider-sources";
 import { maskSecret } from "@/lib/secret-utils";
 import {
@@ -84,6 +88,7 @@ type VoiceRuntimeCandidate = {
   transcription: ResolvedTranscriptionRuntime | null;
   source: KeySource;
   ready: boolean;
+  error: string | null;
 };
 
 export function isTranscriberEnabled() {
@@ -194,6 +199,7 @@ function buildVoiceRuntimeCandidate(
   livekit: ResolvedLivekitCredentials,
   transcription: ResolvedTranscriptionRuntime | null,
   transcriberEnabled: boolean,
+  error: string | null = null,
 ): VoiceRuntimeCandidate {
   const ready = livekit.configured && (!transcriberEnabled || Boolean(transcription?.configured));
   return {
@@ -201,13 +207,45 @@ function buildVoiceRuntimeCandidate(
     transcription,
     source: ready ? livekit.source : "unavailable",
     ready,
+    error,
   };
 }
 
-function resolvePlatformVoiceRuntimeCandidate(transcriberEnabled: boolean): VoiceRuntimeCandidate {
+function disablePlatformTranscriptionRuntime(
+  transcription: ResolvedTranscriptionRuntime,
+): ResolvedTranscriptionRuntime {
+  return {
+    ...transcription,
+    apiKey: null,
+    configured: false,
+    source: "system",
+  };
+}
+
+async function resolvePlatformVoiceRuntimeCandidate(
+  ownerUserId: string | null | undefined,
+  transcriberEnabled: boolean,
+): Promise<VoiceRuntimeCandidate> {
   const livekit = resolvePlatformLivekitCredentials();
   const transcription = transcriberEnabled ? resolvePlatformTranscriptionRuntime() : null;
-  return buildVoiceRuntimeCandidate(livekit, transcription, transcriberEnabled);
+  const candidate = buildVoiceRuntimeCandidate(livekit, transcription, transcriberEnabled);
+
+  if (!ownerUserId || !transcriberEnabled || !candidate.transcription || !candidate.ready) {
+    return candidate;
+  }
+
+  const usageGate = await getPlatformTranscriptionUsageGate(ownerUserId);
+  if (!usageGate.exceeded) {
+    return candidate;
+  }
+
+  return {
+    livekit,
+    transcription: disablePlatformTranscriptionRuntime(candidate.transcription),
+    source: "system",
+    ready: false,
+    error: getPlatformTranscriptionQuotaExceededMessage(),
+  };
 }
 
 async function resolveUserVoiceRuntimeCandidate(
@@ -260,14 +298,16 @@ export async function resolveRoomVoiceRuntimeForOwner(
   const mode = getUserProviderKeysMode();
 
   if (mode === "false") {
-    const platformRuntime = resolvePlatformVoiceRuntimeCandidate(transcriberEnabled);
+    const platformRuntime = await resolvePlatformVoiceRuntimeCandidate(ownerUserId, transcriberEnabled);
     return {
       livekit: platformRuntime.livekit,
       transcription: platformRuntime.transcription,
       transcriberEnabled,
       source: platformRuntime.source,
       ready: platformRuntime.ready,
-      error: platformRuntime.ready ? null : buildVoiceRuntimeError(mode, transcriberEnabled),
+      error: platformRuntime.ready
+        ? null
+        : (platformRuntime.error ?? buildVoiceRuntimeError(mode, transcriberEnabled)),
     };
   }
 
@@ -280,7 +320,9 @@ export async function resolveRoomVoiceRuntimeForOwner(
       transcriberEnabled,
       source: userRuntime.source,
       ready: userRuntime.ready,
-      error: userRuntime.ready ? null : buildVoiceRuntimeError(mode, transcriberEnabled),
+      error: userRuntime.ready
+        ? null
+        : (userRuntime.error ?? buildVoiceRuntimeError(mode, transcriberEnabled)),
     };
   }
 
@@ -295,7 +337,7 @@ export async function resolveRoomVoiceRuntimeForOwner(
     };
   }
 
-  const platformRuntime = resolvePlatformVoiceRuntimeCandidate(transcriberEnabled);
+  const platformRuntime = await resolvePlatformVoiceRuntimeCandidate(ownerUserId, transcriberEnabled);
   if (platformRuntime.ready) {
     console.info("Room voice runtime fell back to platform bundle", {
       ownerUserId,
@@ -332,7 +374,10 @@ export async function resolveRoomVoiceRuntimeForOwner(
     transcriberEnabled,
     source: "unavailable",
     ready: false,
-    error: buildVoiceRuntimeError(mode, transcriberEnabled),
+    error:
+      unavailableRuntime.error ??
+      platformRuntime.error ??
+      buildVoiceRuntimeError(mode, transcriberEnabled),
   };
 }
 

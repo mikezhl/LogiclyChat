@@ -42,6 +42,7 @@ type AnalysisProviderState = {
   credentialMask: string | null;
   model: string | null;
   ready: boolean;
+  error: string | null;
   profiles: {
     realtime: string;
     summary: string;
@@ -288,6 +289,13 @@ function getAnalysisProviderDetails(
     });
   }
 
+  if (!analysis.ready && analysis.error) {
+    details.push({
+      label: language === "zh" ? "错误" : "Error",
+      value: analysis.error,
+    });
+  }
+
   return details;
 }
 
@@ -379,6 +387,7 @@ export default function RoomPageClient({ roomId, initialRoomName, username }: Ro
         credentialMask: null,
         model: null,
         ready: true,
+        error: null,
         profiles: {
           realtime: "default_cn",
           summary: "default_cn",

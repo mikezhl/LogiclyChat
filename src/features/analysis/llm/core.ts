@@ -1,4 +1,5 @@
 import {
+  type ResolvedConversationLlmRuntime,
   type ConversationLlmProviderName,
   resolveConversationLlmRuntimeForOwner,
 } from "@/lib/llm-provider-keys";
@@ -137,12 +138,13 @@ async function invokeWithRetries(
 export async function invokeRealtimeConversationAnalysis(
   input: RealtimeConversationInput,
   ownerUserId?: string | null,
+  runtimeOverride?: ResolvedConversationLlmRuntime,
 ): Promise<ConversationLlmInvocationResult> {
   const promptResolution = resolvePromptTemplate("realtime", getRealtimePromptStyle());
   let source: ConversationLlmInvocationResult["source"] = "unavailable";
 
   try {
-    const runtime = await resolveConversationLlmRuntimeForOwner(ownerUserId);
+    const runtime = runtimeOverride ?? (await resolveConversationLlmRuntimeForOwner(ownerUserId));
     source = runtime.source;
     const provider = getProvider(runtime.provider);
 
@@ -174,12 +176,13 @@ export async function invokeRealtimeConversationAnalysis(
 export async function invokeConversationSummary(
   input: SummaryConversationInput,
   ownerUserId?: string | null,
+  runtimeOverride?: ResolvedConversationLlmRuntime,
 ): Promise<ConversationLlmInvocationResult> {
   const promptResolution = resolvePromptTemplate("summary", getSummaryPromptStyle());
   let source: ConversationLlmInvocationResult["source"] = "unavailable";
 
   try {
-    const runtime = await resolveConversationLlmRuntimeForOwner(ownerUserId);
+    const runtime = runtimeOverride ?? (await resolveConversationLlmRuntimeForOwner(ownerUserId));
     source = runtime.source;
     const provider = getProvider(runtime.provider);
 

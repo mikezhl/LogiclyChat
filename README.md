@@ -34,6 +34,10 @@ Logicly Chat is a realtime room-based discussion product. Users can join the sam
   - `true`: room voice prefers a complete user-owned bundle from the room owner. If the owner has a complete LiveKit bundle and, when realtime transcription is enabled, valid credentials for their own default transcription provider, voice uses that user bundle. Otherwise it falls back to the complete platform voice bundle. The room runtime still chooses one source for the whole voice bundle and never mixes platform and user voice credentials.
   - `full`: room voice requires a complete user-owned bundle from the room owner. Platform voice fallback is disabled, so the owner must save LiveKit credentials and, when realtime transcription is enabled, valid credentials for their own default transcription provider.
 - Analysis LLM follows the same `false` / `true` / `full` fallback pattern.
+- Platform fallback usage is capped per room owner:
+  - `PLATFORM_TRANSCRIPTION_LIMIT_MINUTES_PER_USER` defaults to `120`
+  - `PLATFORM_LLM_LIMIT_TOKENS_PER_USER` defaults to `5000000`
+  - These limits apply only to platform keys, not to user-owned keys
 - User-managed settings are split by responsibility:
   - LiveKit transport: `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`
   - transcription providers: `DEEPGRAM_API_KEY`, `DASHSCOPE_API_KEY`

@@ -36,6 +36,7 @@ export type AnalysisProviderModule = {
   credentialMask: string | null;
   model: string | null;
   ready: boolean;
+  error: string | null;
   profiles: {
     realtime: string;
     summary: string;
@@ -109,6 +110,7 @@ export function buildRoomProviderModules(
       credentialMask: llmRuntime.apiKeyMask,
       model: llmRuntime.model,
       ready: llmRuntime.configured,
+      error: llmRuntime.error,
       profiles,
     },
   };

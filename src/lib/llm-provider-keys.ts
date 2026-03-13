@@ -1,6 +1,10 @@
 import { UserLlmKeys } from "@prisma/client";
 
 import { getUserProviderKeysMode, optionalEnv } from "./env";
+import {
+  getPlatformLlmQuotaExceededMessage,
+  getPlatformLlmUsageGate,
+} from "./platform-usage-limits";
 import { type KeySource } from "./provider-sources";
 import { prisma } from "./prisma";
 import {
@@ -34,6 +38,7 @@ export type ResolvedConversationLlmRuntime = {
   source: RuntimeSource;
   apiKeyMask: string | null;
   configured: boolean;
+  error: string | null;
 };
 
 type NormalizedUserLlmKeys = {
@@ -173,6 +178,7 @@ export async function resolveConversationLlmRuntimeForOwner(
       source: "builtin",
       apiKeyMask: null,
       configured: true,
+      error: null,
     };
   }
 
@@ -187,12 +193,22 @@ export async function resolveConversationLlmRuntimeForOwner(
   let apiKey = canUseCompleteSystemKeys ? systemKeys.apiKey : null;
   let model = canUseCompleteSystemKeys ? systemKeys.model : null;
   let source: KeySource = canUseCompleteSystemKeys ? "system" : "unavailable";
+  let error: string | null = null;
 
   const setRuntimeUnavailable = () => {
     baseUrl = null;
     apiKey = null;
     model = null;
     source = "unavailable";
+    error = null;
+  };
+
+  const blockPlatformRuntime = () => {
+    baseUrl = null;
+    apiKey = null;
+    model = null;
+    source = "system";
+    error = getPlatformLlmQuotaExceededMessage();
   };
 
   if (canUseUserKeys && ownerUserId) {
@@ -239,6 +255,13 @@ export async function resolveConversationLlmRuntimeForOwner(
     }
   }
 
+  if (source === "system" && ownerUserId) {
+    const usageGate = await getPlatformLlmUsageGate(ownerUserId);
+    if (usageGate.exceeded) {
+      blockPlatformRuntime();
+    }
+  }
+
   return {
     provider,
     baseUrl,
@@ -247,5 +270,6 @@ export async function resolveConversationLlmRuntimeForOwner(
     source,
     apiKeyMask: source === "user" ? maskSecret(apiKey) : null,
     configured: Boolean(baseUrl && apiKey && model),
+    error,
   };
 }
