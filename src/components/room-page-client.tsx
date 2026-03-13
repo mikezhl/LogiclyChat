@@ -124,26 +124,6 @@ type VoiceTrackParticipant = {
 const ROOM_CONNECTION_IDLE_TIMEOUT_MS = 3 * 60 * 1000;
 const ROOM_META_POLL_INTERVAL_MS = 5 * 1000;
 
-function formatDate(value: string | null, language: UiLanguage) {
-  if (!value) {
-    return language === "zh" ? "暂无" : "N/A";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat(toDateLocale(language), {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(date);
-}
-
 function formatTime(value: string, language: UiLanguage) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -412,6 +392,14 @@ export default function RoomPageClient({ roomId, initialRoomName, username }: Ro
   const [speakerSwitchPending, setSpeakerSwitchPending] = useState(false);
   const [transcriptionState, setTranscriptionState] = useState<TranscriptionState>("idle");
   const [hasAutoConnectAttempted, setHasAutoConnectAttempted] = useState(false);
+  
+  // Real-time analysis scores and insights
+  const [scores, setScores] = useState({ A: 100, B: 100 });
+  const [overallInsights, setOverallInsights] = useState({ A: "", B: "" });
+  const [suggestions, setSuggestions] = useState({ A: [] as string[], B: [] as string[] });
+  const [rawMessageId, setRawMessageId] = useState<string | null>(null);
+  const [showEndRoomConfirm, setShowEndRoomConfirm] = useState(false);
+
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const voiceProviderRef = useRef(roomMeta.providers.voice);
   const micEnabledRef = useRef(false);
@@ -430,6 +418,36 @@ export default function RoomPageClient({ roomId, initialRoomName, username }: Ro
       const merged = mergeMessages(current, incoming);
       const latest = merged[merged.length - 1];
       latestMessageCreatedAtRef.current = latest ? latest.createdAt : null;
+      
+      // Calculate scores and insights from all messages to ensure consistency
+      let newScoreA = 100;
+      let newScoreB = 100;
+      let lastOverallA = "";
+      let lastOverallB = "";
+      let lastSuggestionsA: string[] = [];
+      let lastSuggestionsB: string[] = [];
+
+      for (const msg of merged) {
+        if (msg.type === "analysis") {
+          try {
+            const data = JSON.parse(msg.content);
+            if (data.type === "realtime-analysis") {
+              if (data.roundScores?.A?.delta) newScoreA += data.roundScores.A.delta;
+              if (data.roundScores?.B?.delta) newScoreB += data.roundScores.B.delta;
+              if (data.insights?.overall?.A) lastOverallA = data.insights.overall.A;
+              if (data.insights?.overall?.B) lastOverallB = data.insights.overall.B;
+              if (data.suggestions?.A) lastSuggestionsA = data.suggestions.A;
+              if (data.suggestions?.B) lastSuggestionsB = data.suggestions.B;
+            }
+          } catch {
+            // Ignore parse errors for scores
+          }
+        }
+      }
+      setScores({ A: newScoreA, B: newScoreB });
+      setOverallInsights({ A: lastOverallA, B: lastOverallB });
+      setSuggestions({ A: lastSuggestionsA, B: lastSuggestionsB });
+      
       return merged;
     });
   }, []);
@@ -1194,10 +1212,12 @@ export default function RoomPageClient({ roomId, initialRoomName, username }: Ro
       return;
     }
 
+    const minHeight = 64;
     const maxHeight = 168;
     input.style.height = "auto";
-    input.style.height = `${Math.min(input.scrollHeight, maxHeight)}px`;
-    input.style.overflowY = input.scrollHeight > maxHeight ? "auto" : "hidden";
+    const newHeight = Math.max(input.scrollHeight, minHeight);
+    input.style.height = `${Math.min(newHeight, maxHeight)}px`;
+    input.style.overflowY = newHeight > maxHeight ? "auto" : "hidden";
   }, [chatInput]);
 
   useEffect(() => {
@@ -1247,6 +1267,7 @@ export default function RoomPageClient({ roomId, initialRoomName, username }: Ro
   const isEnded = roomMeta.status === "ENDED";
   const ownerActive = roomMeta.isCreator || roomMeta.ownerPresence.active;
   const roomInteractionBlocked = isEnded || !ownerActive;
+
   const isInitialConnectionPending =
     connectionState === "disconnected" && !hasAutoConnectAttempted && !roomInteractionBlocked;
   const roomConnectionStatusClass = isInitialConnectionPending ? "connecting" : connectionState;
@@ -1255,99 +1276,114 @@ export default function RoomPageClient({ roomId, initialRoomName, username }: Ro
   const nextSpeakerMode: RoomSpeakerMode = speakerMode === "self" ? "bot" : "self";
   const nextSpeakerName = getRoomSpeakerDisplayName(username, nextSpeakerMode);
 
+  // Helper to render AI Analysis
+  const AnalysisMessage = ({ message }: { message: ChatMessage }) => {
+    try {
+      const data = JSON.parse(message.content);
+      if (data.type !== "realtime-analysis") throw new Error("Not realtime");
+
+      const isRaw = rawMessageId === message.id;
+
+      return (
+        <div className="bubble analysis">
+          {isRaw ? (
+            <pre style={{ fontSize: '0.75rem', overflowX: 'auto', background: 'rgba(0,0,0,0.03)', padding: '10px', borderRadius: '8px', color: '#000' }}>
+              {JSON.stringify(data, null, 2)}
+            </pre>
+          ) : (
+            <div className="analysis-grid">
+              <div className="analysis-side-section">
+                <div className="analysis-side-head">
+                  <div className="analysis-side-h">{t("对方", "Other Side")}</div>
+                  {data.roundScores?.B && (
+                    <span className="analysis-delta-tag">
+                      {data.roundScores.B.delta >= 0 ? '+' : ''}{data.roundScores.B.delta}
+                    </span>
+                  )}
+                </div>
+                <p className="analysis-insight">{data.insights.currentRound.B || t("本轮无发言", "No activity this round")}</p>
+                {data.roundScores?.B?.reason && (
+                  <span className="analysis-score-reason">{data.roundScores.B.reason}</span>
+                )}
+              </div>
+
+              <div className="analysis-side-section">
+                <div className="analysis-side-head">
+                  <div className="analysis-side-h">{t("我方", "Our Side")}</div>
+                  {data.roundScores?.A && (
+                    <span className="analysis-delta-tag">
+                      {data.roundScores.A.delta >= 0 ? '+' : ''}{data.roundScores.A.delta}
+                    </span>
+                  )}
+                </div>
+                <p className="analysis-insight">{data.insights.currentRound.A || t("本轮无发言", "No activity this round")}</p>
+                {data.roundScores?.A?.reason && (
+                  <span className="analysis-score-reason">{data.roundScores.A.reason}</span>
+                )}
+              </div>
+            </div>
+          )}
+          
+          <button 
+            className="raw-toggle" 
+            onClick={() => setRawMessageId(isRaw ? null : message.id)}
+          >
+            {isRaw ? t("查看精简版", "Minimal") : t("查看原文", "Raw JSON")}
+          </button>
+        </div>
+      );
+    } catch {
+      return (
+        <div className="bubble analysis">
+          <header className="bubble-meta">
+            <strong>{t("AI 分析", "AI Analysis")}</strong>
+            <time dateTime={message.createdAt}>{formatTime(message.createdAt, language)}</time>
+          </header>
+          <p>{message.content}</p>
+        </div>
+      );
+    }
+  };
+
   return (
     <main className="room-page">
       <section className="room-shell room-shell-chat">
-        <header className="room-header" style={{ paddingBottom: '16px' }}>
+        <header className="room-header">
           <div className="room-header-title">
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <h1 style={{ fontSize: '1.5rem', margin: 0 }}>{roomDisplayName}</h1>
+              <h1>{roomDisplayName}</h1>
               <span className={`room-status ${roomConnectionStatusClass}`}>
                 {connectionState === "connected"
-                  ? t("房间已连接", "Room Connected")
+                  ? t("已连接", "Connected")
                   : connectionState === "connecting" || isInitialConnectionPending
-                    ? t("连接房间中", "Connecting Room")
-                    : t("房间未连接", "Room Disconnected")}
+                    ? t("连接中", "Connecting")
+                    : t("断开", "Disconnected")}
               </span>
               <span className={`room-status transcription-status ${transcriptionState}`}>
                 {transcriptionState === "ready"
-                  ? t("语音转录已开启", "Voice Transcription On")
+                  ? t("转录中", "Transcription On")
                   : transcriptionState === "starting"
-                    ? t("语音转录启动中", "Voice Transcription Starting")
-                    : transcriptionState === "disabled"
-                      ? t("语音转录不可用", "Voice Transcription Unavailable")
-                      : t("语音转录未开始", "Voice Transcription Not Started")}
+                    ? t("启动中", "Starting")
+                    : t("转录关", "Transcription Off")}
               </span>
             </div>
-            {roomMeta.roomName ? (
-              <p className="room-header-code">
-                {t("房间代码", "Room code")}: {roomId}
-              </p>
-            ) : null}
             <div className="room-meta-row">
+              <span className="room-header-code">{roomId}</span>
+              <span style={{ opacity: 0.5 }}>|</span>
               <span>@{username}</span>
-              {roomMeta.features.speakerSwitchEnabled ? (
+              {roomMeta.features.speakerSwitchEnabled && currentSpeakerName !== username && (
                 <>
-                  <span style={{ color: 'var(--line-strong)' }}>|</span>
-                  <span>
-                    {t("当前说话方", "Current Speaker")}: {currentSpeakerName}
-                  </span>
-                </>
-              ) : null}
-              {isEnded && (
-                <>
-                  <span style={{ color: 'var(--line-strong)' }}>|</span>
-                  <span>
-                    {t("已结束", "Ended")} ({formatDate(roomMeta.endedAt, language)})
-                  </span>
+                  <span style={{ opacity: 0.5 }}>|</span>
+                  <span>{currentSpeakerName}</span>
                 </>
               )}
-              {!isEnded && !ownerActive && (
-                <>
-                  <span style={{ color: 'var(--line-strong)' }}>|</span>
-                  <span>{t("房主离线", "Owner Offline")}</span>
-                </>
-              )}
-              <span style={{ color: 'var(--line-strong)' }}>|</span>
-              <div className="provider-tooltip">
-                <div className="room-status provider-chip" tabIndex={0}>
-                  {t("语音与转录提供者", "Voice Provider")}: {getVoiceProviderLabel(roomMeta.providers.voice, language)}
-                </div>
-                <div className="provider-popover" role="tooltip">
-                  <div className="provider-popover-title">
-                    {t("语音与转录", "Voice & Transcription")}
-                  </div>
-                  {getVoiceProviderDetails(roomMeta.providers.voice, language).map((item) => (
-                    <div key={`voice-${item.label}`} className="provider-popover-row">
-                      <span className="provider-popover-label">{item.label}</span>
-                      <strong className="provider-popover-value">{item.value}</strong>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="provider-tooltip">
-                <div className="room-status provider-chip" tabIndex={0}>
-                  {t("分析模块提供者", "Analysis Provider")}: {getAnalysisProviderLabel(roomMeta.providers.analysis, language)}
-                </div>
-                <div className="provider-popover" role="tooltip">
-                  <div className="provider-popover-title">
-                    {t("分析模块", "Analysis")}
-                  </div>
-                  {getAnalysisProviderDetails(roomMeta.providers.analysis, language).map((item) => (
-                    <div key={`analysis-${item.label}`} className="provider-popover-row">
-                      <span className="provider-popover-label">{item.label}</span>
-                      <strong className="provider-popover-value">{item.value}</strong>
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
           </div>
           <div className="room-actions">
-            <Link className="text-link-button" style={{ height: '40px' }} href="/">
-              {t("返回", "Back")}
+            <Link className="ghost-btn" style={{ height: '40px' }} href="/">
+              {t("返回主页", "Back to Home")}
             </Link>
-            {roomMeta.features.speakerSwitchEnabled ? (
+            {roomMeta.features.speakerSwitchEnabled && (
               <button
                 type="button"
                 className="ghost-btn"
@@ -1355,32 +1391,49 @@ export default function RoomPageClient({ roomId, initialRoomName, username }: Ro
                 onClick={() => void switchSpeakerMode()}
                 disabled={isEnded || connectionState === "connecting" || speakerSwitchPending}
               >
-                {speakerSwitchPending
-                  ? t("切换中...", "Switching...")
-                  : t(`切换到 ${nextSpeakerName}`, `Switch to ${nextSpeakerName}`)}
+                {speakerSwitchPending 
+                  ? "..." 
+                  : speakerMode === "self" 
+                    ? t("模拟对方发言", "Simulate Other") 
+                    : t("退出模拟发言", "Exit Simulation")}
               </button>
-            ) : null}
-            {roomMeta.isCreator ? (
-              <button type="button" className="ghost-btn" style={{ height: '40px', background: 'transparent', border: '1px solid var(--error)', color: 'var(--error)' }} onClick={() => void endConversation()} disabled={endingRoom || isEnded}>
-                {endingRoom
-                  ? t("结束中...", "Ending...")
-                  : isEnded
-                    ? t("已结束", "Ended")
-                    : t("结束对话", "End Room")}
+            )}
+            {roomMeta.isCreator && (
+              <button 
+                type="button" 
+                className="destructive-btn" 
+                style={{ height: '40px' }} 
+                onClick={() => setShowEndRoomConfirm(true)} 
+                disabled={endingRoom || isEnded}
+              >
+                {endingRoom ? "..." : t("结束房间", "End Room")}
               </button>
-            ) : null}
+            )}
           </div>
         </header>
 
-        {roomError ? <p className="form-error room-error" style={{ margin: '0 0 16px' }}>{roomError}</p> : null}
+        {roomError && (
+          <div className="room-error-box">
+            <span style={{ fontSize: '1.2rem' }}>&bull;</span>
+            {roomError}
+          </div>
+        )}
 
         <section className="chat-panel">
           <div className="chat-scroll">
             {messages.length === 0 ? (
-              <p className="empty-chat">{t("暂无历史消息。", "No message history yet.")}</p>
+              <p className="empty-chat">{t("暂无对话内容。", "Silence.")}</p>
             ) : (
               messages.map((message) => {
-                const announcement = message.type === "analysis" || message.type === "summary";
+                if (message.type === "analysis") {
+                  return (
+                    <div key={message.id} className="message-row announcement">
+                      <AnalysisMessage message={message} />
+                    </div>
+                  );
+                }
+
+                const announcement = message.type === "summary";
                 const own = announcement ? false : isOwnMessage(message, username);
                 return (
                   <div
@@ -1392,16 +1445,10 @@ export default function RoomPageClient({ roomId, initialRoomName, username }: Ro
                     >
                       <header className="bubble-meta">
                         <strong>
-                          {announcement ? t("AI 分析", "AI Analysis") : own ? t("我", "Me") : message.senderName}
+                          {announcement ? t("最终总结", "Final Summary") : own ? t("我", "Me") : message.senderName}
                         </strong>
-                        <span className={`bubble-source ${message.type}`}>
-                          {message.type === "transcript"
-                            ? t("语音转录", "Transcript")
-                            : message.type === "text"
-                              ? t("文字消息", "Text")
-                              : message.type === "analysis"
-                                ? t("实时分析", "Realtime Analysis")
-                                : t("最终总结", "Final Summary")}
+                        <span className="bubble-source">
+                          {message.type === "transcript" ? t("音", "V") : t("文", "T")}
                         </span>
                         <time dateTime={message.createdAt}>{formatTime(message.createdAt, language)}</time>
                       </header>
@@ -1422,17 +1469,13 @@ export default function RoomPageClient({ roomId, initialRoomName, username }: Ro
             onChange={(event) => setChatInput(event.target.value)}
             onKeyDown={handleChatInputKeyDown}
             placeholder={
-              isEnded
-                ? t("房间已结束，仅可查看历史记录", "This room has ended and is now read-only")
-                : !ownerActive
-                  ? t("房主离线，暂时无法发送消息", "Owner is offline, messages are temporarily unavailable")
-                : t("输入消息...", "Type a message...")
+              isEnded ? t("只读模式", "Read-only") : t("输入消息...", "Type a message...")
             }
             disabled={roomInteractionBlocked}
             rows={1}
           />
           <button type="submit" className="primary-btn" disabled={sendingText || roomInteractionBlocked}>
-            {sendingText ? t("发送中", "Sending") : t("发送", "Send")}
+            {t("发送", "Send")}
           </button>
           
           {connectionState === "connected" ? (
@@ -1442,28 +1485,156 @@ export default function RoomPageClient({ roomId, initialRoomName, username }: Ro
               onClick={() => void (micEnabled ? leaveVoiceCall() : startVoiceCall())}
               disabled={roomInteractionBlocked}
             >
-              {micEnabled ? t("退出通话", "Leave Call") : t("开始通话", "Start Call")}
+              {micEnabled ? t("退出通话", "Leave") : t("通话", "Call")}
             </button>
-          ) : hasAutoConnectAttempted && !isEnded && ownerActive ? (
+          ) : !roomInteractionBlocked && (
             <button
               type="button"
               className="ghost-btn"
               onClick={() => void connectRoom()}
               disabled={connectionState === "connecting"}
             >
-              {connectionState === "connecting"
-                ? t("重连中...", "Reconnecting...")
-                : t("重新连接", "Reconnect")}
+              {t("重连", "Reconnect")}
             </button>
-          ) : !isEnded ? (
-            <button type="button" className="ghost-btn" disabled>
-              {t("等待房主在线", "Waiting for Owner")}
-            </button>
-          ) : null}
+          )}
         </form>
 
         <div ref={audioContainerRef} className="audio-container" />
       </section>
+
+      <aside className="room-sidebar">
+        <div className="sidebar-section">
+          <h4>{t("实时比分", "Real-time Score")}</h4>
+          <div className="score-card">
+            <div className="score-box">
+              <span className="label">{t("我方", "Our Side")}</span>
+              <span className="value" style={{ color: scores.A >= scores.B ? 'var(--primary)' : 'inherit' }}>{scores.A}</span>
+            </div>
+            <div className="score-box">
+              <span className="label">{t("对方", "Other Side")}</span>
+              <span className="value" style={{ color: scores.B >= scores.A ? 'var(--primary)' : 'inherit' }}>{scores.B}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="sidebar-section">
+          <h4>{t("双方观点", "Perspectives")}</h4>
+          <div className="overall-insight-box">
+            <div className="overall-insight-item">
+              <strong>{t("我方", "Our Side")}</strong>
+              <p className="analysis-insight" style={{ fontSize: '0.85rem' }}>{overallInsights.A || t("暂无洞察", "No insights yet")}</p>
+            </div>
+            <div style={{ height: '1px', background: 'var(--line)' }} />
+            <div className="overall-insight-item">
+              <strong>{t("对方", "Other Side")}</strong>
+              <p className="analysis-insight" style={{ fontSize: '0.85rem' }}>{overallInsights.B || t("暂无洞察", "No insights yet")}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="sidebar-section">
+          <h4>{t("建议", "Suggestions")}</h4>
+          <div className="overall-insight-box">
+            <div className="overall-insight-item">
+              <strong>{t("我方", "Our Side")}</strong>
+              {suggestions.A.length > 0 ? (
+                <ul style={{ paddingLeft: '16px', margin: '4px 0', fontSize: '0.85rem', color: 'var(--muted)' }}>
+                  {suggestions.A.map((s, i) => <li key={i}>{s}</li>)}
+                </ul>
+              ) : (
+                <p className="analysis-insight" style={{ fontSize: '0.85rem' }}>{t("暂无建议", "No suggestions yet")}</p>
+              )}
+            </div>
+            <div style={{ height: '1px', background: 'var(--line)' }} />
+            <div className="overall-insight-item">
+              <strong>{t("对方", "Other Side")}</strong>
+              {suggestions.B.length > 0 ? (
+                <ul style={{ paddingLeft: '16px', margin: '4px 0', fontSize: '0.85rem', color: 'var(--muted)' }}>
+                  {suggestions.B.map((s, i) => <li key={i}>{s}</li>)}
+                </ul>
+              ) : (
+                <p className="analysis-insight" style={{ fontSize: '0.85rem' }}>{t("暂无建议", "No suggestions yet")}</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="sidebar-section" style={{ marginTop: 'auto' }}>
+          <h4>{t("服务状态", "Providers")}</h4>
+          <div className="key-status-grid" style={{ fontSize: '0.75rem', gap: '8px', background: 'transparent', padding: 0 }}>
+            <div className="provider-tooltip">
+              <div className="room-status provider-chip" style={{ width: '100%', justifyContent: 'space-between', cursor: 'help' }} tabIndex={0}>
+                <span>Voice</span>
+                <strong>{getVoiceProviderLabel(roomMeta.providers.voice, language)}</strong>
+              </div>
+              <div className="provider-popover" role="tooltip">
+                <div className="provider-popover-title">
+                  {t("语音与转录", "Voice & Transcription")}
+                </div>
+                {getVoiceProviderDetails(roomMeta.providers.voice, language).map((item) => (
+                  <div key={`voice-${item.label}`} className="provider-popover-row">
+                    <span className="provider-popover-label">{item.label}</span>
+                    <strong className="provider-popover-value">{item.value}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="provider-tooltip">
+              <div className="room-status provider-chip" style={{ width: '100%', justifyContent: 'space-between', cursor: 'help' }} tabIndex={0}>
+                <span>Analysis</span>
+                <strong>{getAnalysisProviderLabel(roomMeta.providers.analysis, language)}</strong>
+              </div>
+              <div className="provider-popover" role="tooltip">
+                <div className="provider-popover-title">
+                  {t("分析模块", "Analysis")}
+                </div>
+                {getAnalysisProviderDetails(roomMeta.providers.analysis, language).map((item) => (
+                  <div key={`analysis-${item.label}`} className="provider-popover-row">
+                    <span className="provider-popover-label">{item.label}</span>
+                    <strong className="provider-popover-value">{item.value}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {showEndRoomConfirm && (
+        <div className="auth-modal-overlay">
+          <div className="auth-modal">
+            <header className="auth-modal-header">
+              <h2>{t("确认结束房间", "Confirm End Room")}</h2>
+            </header>
+            <div style={{ marginBottom: '24px', lineHeight: '1.6', color: 'var(--muted)' }}>
+              {t(
+                "结束后将生成总结报告，房间将无法再进行对话，只能查看对话历史。是否确认结束？",
+                "A summary report will be generated. The room will no longer allow new conversation and will be read-only. Are you sure you want to end?"
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button 
+                className="ghost-btn" 
+                style={{ flex: 1 }}
+                onClick={() => setShowEndRoomConfirm(false)}
+              >
+                {t("取消", "Cancel")}
+              </button>
+              <button 
+                className="destructive-btn" 
+                style={{ flex: 1 }}
+                onClick={() => {
+                  setShowEndRoomConfirm(false);
+                  void endConversation();
+                }}
+              >
+                {t("确认结束", "Confirm End")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
