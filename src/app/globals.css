@@ -113,6 +113,18 @@ a:focus-visible {
   flex-wrap: wrap;
 }
 
+.github-link {
+  width: 48px;
+  min-width: 48px;
+  padding: 0;
+  color: var(--muted);
+  transition: color 0.2s, background-color 0.1s;
+}
+
+.github-link:hover {
+  color: var(--foreground);
+}
+
 .lang-toggle-btn {
   height: 48px;
   min-width: 60px;
