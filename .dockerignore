@@ -1,0 +1,17 @@
+node_modules
+.next
+.next_old_build_cache
+logs
+.git
+.env*
+openspec
+.agent
+.claude
+.codex
+.gemini
+coverage
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
