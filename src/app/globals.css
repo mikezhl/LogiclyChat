@@ -136,12 +136,24 @@ a:focus-visible {
 }
 
 .lang-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 48px;
-  min-width: 60px;
   padding: 0 16px;
-  font-size: 0.85rem;
-  font-weight: 600;
   border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.lang-toggle-btn:hover {
+  color: var(--foreground);
+  background: var(--surface);
 }
 
 .user-chip {

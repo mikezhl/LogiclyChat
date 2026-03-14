@@ -602,11 +602,11 @@ export default function DashboardPageClient({
               </a>
               <button
                 type="button"
-                className="ghost-btn lang-toggle-btn"
-                aria-label={t("切换语言", "Switch language")}
+                className="lang-toggle-btn"
+                aria-label={t("切换到英文", "Switch to Chinese")}
                 onClick={toggleLanguage}
               >
-                {isZh ? "EN" : "中文"}
+                {isZh ? "EN" : "中"}
               </button>
               {isAuthenticated ? (
                 <>

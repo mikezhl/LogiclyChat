@@ -70,11 +70,11 @@ export default function AuthPageClient({ mode }: AuthPageClientProps) {
         <div className="header-actions" style={{ justifyContent: "flex-end", marginTop: 0, marginBottom: 16 }}>
           <button
             type="button"
-            className="ghost-btn lang-toggle-btn"
-            aria-label={t("切换语言", "Switch language")}
+            className="lang-toggle-btn"
+            aria-label={t("切换到英文", "Switch to Chinese")}
             onClick={toggleLanguage}
           >
-            {isZh ? "EN" : "中文"}
+            {isZh ? "EN" : "中"}
           </button>
         </div>
         <h1>{title}</h1>
