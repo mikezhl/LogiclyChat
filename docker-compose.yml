@@ -20,7 +20,7 @@ services:
       - |
           mkdir -p /app/logs
           pnpm prisma db push --skip-generate
-          exec pnpm run start -- --hostname 0.0.0.0 --port "$APP_PORT"
+          exec pnpm exec next start --hostname 0.0.0.0 --port "$APP_PORT"
     ports:
       - "${APP_PORT:-3000}:${APP_PORT:-3000}"
     volumes:
