@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { resolveRoomVoiceRuntimeForOwner } from "@/features/transcription/core/runtime";
+import { appendTranscriberRuntimeLog } from "@/features/transcription/runtime/runtime-log";
 import { releaseTranscriberDispatchIfIdle } from "@/features/transcription/service/livekit-dispatch";
 import { requireApiUser } from "@/lib/auth-guard";
 import { RoomAccessError, getAccessibleRoomOrThrow } from "@/lib/rooms";
@@ -33,6 +34,11 @@ export async function POST(request: Request, context: RouteContext) {
 
     const room = await getAccessibleRoomOrThrow(roomId, user.id);
     const body = (await request.json().catch(() => ({}))) as ReleaseVoiceRuntimeRequest;
+    appendTranscriberRuntimeLog("transcriber-voice-route", "release-request", {
+      roomId,
+      userId: user.id,
+      participantIdentity: body.participantIdentity?.trim() || null,
+    });
     const voiceRuntime = await resolveRoomVoiceRuntimeForOwner(room.createdById);
 
     if (!voiceRuntime.livekit.livekitUrl || !voiceRuntime.livekit.livekitApiKey || !voiceRuntime.livekit.livekitApiSecret) {
@@ -47,6 +53,12 @@ export async function POST(request: Request, context: RouteContext) {
       },
       ignoredParticipantIdentity: body.participantIdentity,
     });
+    appendTranscriberRuntimeLog("transcriber-voice-route", "release-result", {
+      roomId,
+      userId: user.id,
+      participantIdentity: body.participantIdentity?.trim() || null,
+      result,
+    });
 
     return NextResponse.json(result);
   } catch (error) {
@@ -55,6 +67,9 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const message = error instanceof Error ? error.message : "Failed to release voice runtime";
+    appendTranscriberRuntimeLog("transcriber-voice-route", "release-failed", {
+      error: message,
+    });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

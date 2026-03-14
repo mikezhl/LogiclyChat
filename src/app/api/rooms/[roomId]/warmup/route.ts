@@ -5,6 +5,7 @@ import {
   isTranscriberEnabled,
   resolveRoomVoiceRuntimeForOwner,
 } from "@/features/transcription/core/runtime";
+import { appendTranscriberRuntimeLog } from "@/features/transcription/runtime/runtime-log";
 import { ensureTranscriberWorker } from "@/features/transcription/runtime/worker-manager";
 import { requireApiUser } from "@/lib/auth-guard";
 import { assertRoomOwnerActiveOrThrow } from "@/lib/room-presence";
@@ -33,6 +34,10 @@ export async function POST(_request: Request, context: RouteContext) {
     }
 
     const room = await getAccessibleRoomOrThrow(roomId, user.id);
+    appendTranscriberRuntimeLog("transcriber-warmup-route", "warmup-request", {
+      roomId,
+      userId: user.id,
+    });
     if (room.status === RoomStatus.ENDED) {
       return NextResponse.json({ ok: true, skipped: "room-ended" });
     }
@@ -63,6 +68,11 @@ export async function POST(_request: Request, context: RouteContext) {
         reason: `warmup:${room.roomId}`,
       },
     );
+    appendTranscriberRuntimeLog("transcriber-warmup-route", "warmup-result", {
+      roomId,
+      userId: user.id,
+      worker,
+    });
 
     return NextResponse.json({
       ok: true,
@@ -74,6 +84,9 @@ export async function POST(_request: Request, context: RouteContext) {
     }
 
     const message = error instanceof Error ? error.message : "Failed to warm up transcriber worker";
+    appendTranscriberRuntimeLog("transcriber-warmup-route", "warmup-failed", {
+      error: message,
+    });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

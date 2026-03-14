@@ -7,6 +7,7 @@ import {
   isTranscriberEnabled,
   resolveRoomVoiceRuntimeForOwner,
 } from "@/features/transcription/core/runtime";
+import { appendTranscriberRuntimeLog } from "@/features/transcription/runtime/runtime-log";
 import { ensureTranscriberDispatch } from "@/features/transcription/service/livekit-dispatch";
 import { ensureTranscriberWorker } from "@/features/transcription/runtime/worker-manager";
 import { requireApiUser } from "@/lib/auth-guard";
@@ -65,6 +66,19 @@ export async function POST(request: Request) {
       resolveRoomVoiceRuntimeForOwner(room.createdById),
       resolveConversationLlmRuntimeForOwner(room.createdById),
     ]);
+    appendTranscriberRuntimeLog("transcriber-token-route", "resolved-room-runtime", {
+      roomId,
+      userId: user.id,
+      connectionMode,
+      speakerMode,
+      roomVoiceReady: voiceRuntime.ready,
+      roomVoiceSource: voiceRuntime.source,
+      transcriberEnabled: voiceRuntime.transcriberEnabled,
+      livekitSource: voiceRuntime.livekit.source,
+      transcriptionProvider: voiceRuntime.transcription?.provider ?? null,
+      transcriptionSource: voiceRuntime.transcription?.source ?? null,
+      runtimeError: voiceRuntime.error,
+    });
     const livekitCredentials = voiceRuntime.livekit;
     if (!livekitCredentials.livekitUrl || !livekitCredentials.livekitApiKey || !livekitCredentials.livekitApiSecret) {
       return NextResponse.json(
@@ -86,7 +100,7 @@ export async function POST(request: Request) {
     }
 
     if (isVoiceMode && transcriberEnabled) {
-      await ensureTranscriberWorker(
+      const worker = await ensureTranscriberWorker(
         {
           livekitUrl: voiceRuntime.livekit.livekitUrl!,
           livekitApiKey: voiceRuntime.livekit.livekitApiKey!,
@@ -97,6 +111,11 @@ export async function POST(request: Request) {
           reason: `join-voice:${roomId}`,
         },
       );
+      appendTranscriberRuntimeLog("transcriber-token-route", "ensured-transcriber-worker", {
+        roomId,
+        userId: user.id,
+        worker,
+      });
     }
 
     void ensureConversationAnalysisWorker({
@@ -127,12 +146,22 @@ export async function POST(request: Request) {
 
     if (isVoiceMode && transcriberEnabled) {
       try {
-        await ensureTranscriberDispatch(roomId, {
+        const dispatch = await ensureTranscriberDispatch(roomId, {
           livekitUrl: voiceRuntime.livekit.livekitUrl!,
           livekitApiKey: voiceRuntime.livekit.livekitApiKey!,
           livekitApiSecret: voiceRuntime.livekit.livekitApiSecret!,
         });
+        appendTranscriberRuntimeLog("transcriber-token-route", "ensured-transcriber-dispatch", {
+          roomId,
+          userId: user.id,
+          dispatch,
+        });
       } catch (dispatchError) {
+        appendTranscriberRuntimeLog("transcriber-token-route", "ensure-transcriber-dispatch-failed", {
+          roomId,
+          userId: user.id,
+          error: dispatchError instanceof Error ? dispatchError.message : dispatchError,
+        });
         console.error("Token route failed to dispatch transcriber agent:", {
           roomId,
           error: dispatchError instanceof Error ? dispatchError.message : dispatchError,
@@ -161,6 +190,13 @@ export async function POST(request: Request) {
 
     const token = await accessToken.toJwt();
     const providers = buildRoomProviderModules(voiceRuntime, llmRuntime, owner?.username ?? null);
+    appendTranscriberRuntimeLog("transcriber-token-route", "issued-livekit-token", {
+      roomId,
+      userId: user.id,
+      identity: speakerProfile.participantIdentity,
+      connectionMode,
+      transcriberEnabled: voiceRuntime.transcriberEnabled,
+    });
 
     return NextResponse.json({
       token,
@@ -177,6 +213,9 @@ export async function POST(request: Request) {
     }
 
     const message = error instanceof Error ? error.message : "Failed to create token";
+    appendTranscriberRuntimeLog("transcriber-token-route", "token-route-failed", {
+      error: message,
+    });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

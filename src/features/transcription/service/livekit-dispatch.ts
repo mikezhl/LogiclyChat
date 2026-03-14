@@ -11,6 +11,7 @@ import {
   getTranscriberAgentName,
   isTranscriberEnabled,
 } from "@/features/transcription/core/runtime";
+import { appendTranscriberRuntimeLog } from "@/features/transcription/runtime/runtime-log";
 import { requireEnv } from "@/lib/env";
 
 export type TranscriberDispatchResult = {
@@ -105,6 +106,7 @@ function hasActiveMicrophoneTrack(participant: ParticipantInfo, ignoredParticipa
 }
 
 function logDispatch(message: string, payload?: Record<string, unknown>) {
+  appendTranscriberRuntimeLog("transcriber-dispatch", message, payload);
   if (payload) {
     console.info(`[transcriber-dispatch] ${message}`, payload);
     return;

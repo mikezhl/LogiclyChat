@@ -156,6 +156,10 @@ const ROOM_CONNECTION_IDLE_TIMEOUT_MS = 3 * 60 * 1000;
 const ROOM_META_POLL_INTERVAL_MS = 5 * 1000;
 const ANALYSIS_SIDE_ORDER: RealtimeAnalysisSide[] = ["A", "B"];
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function formatTime(value: string, language: UiLanguage) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -291,7 +295,13 @@ function getAnalysisInsight(
     return "";
   }
 
-  return content.insights[scope][label] ?? "";
+  const insights = isRecord(content.insights as unknown)
+    ? (content.insights as Record<string, unknown>)
+    : null;
+  const scopedInsights = insights && isRecord(insights[scope]) ? insights[scope] : null;
+  const value = scopedInsights?.[label];
+
+  return typeof value === "string" ? value : "";
 }
 
 function getAnalysisSuggestions(
@@ -302,7 +312,12 @@ function getAnalysisSuggestions(
     return [];
   }
 
-  return content.suggestions[label] ?? [];
+  const suggestions = isRecord(content.suggestions as unknown)
+    ? (content.suggestions as Record<string, unknown>)
+    : null;
+  const value = suggestions?.[label];
+
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function getAnalysisRoundScore(
@@ -313,7 +328,34 @@ function getAnalysisRoundScore(
     return null;
   }
 
-  return content.roundScores[label] ?? null;
+  const roundScores = isRecord(content.roundScores as unknown)
+    ? (content.roundScores as Record<string, unknown>)
+    : null;
+  const value = roundScores?.[label];
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const rawDelta = value.delta;
+  let delta = Number.NaN;
+  if (typeof rawDelta === "number") {
+    delta = rawDelta;
+  } else if (typeof rawDelta === "string") {
+    const normalizedDelta = rawDelta.trim();
+    if (normalizedDelta) {
+      delta = Number(normalizedDelta);
+    }
+  }
+  const reason = typeof value.reason === "string" ? value.reason : "";
+
+  if (!Number.isFinite(delta) && !reason) {
+    return null;
+  }
+
+  return {
+    delta: Number.isFinite(delta) ? delta : 0,
+    reason,
+  };
 }
 
 function buildAnalysisViewState(messages: ChatMessage[], currentUserId: string): AnalysisViewState {

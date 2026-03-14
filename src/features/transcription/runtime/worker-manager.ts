@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { LivekitDispatchCredentials } from "@/features/transcription/service/livekit-dispatch";
+import { appendTranscriberRuntimeLog } from "@/features/transcription/runtime/runtime-log";
 
 type WorkerState = "starting" | "ready" | "failed";
 
@@ -118,32 +119,16 @@ function attachLineReader(stream: NodeJS.ReadableStream, onLine: (line: string) 
 }
 
 function stopWorker(record: WorkerRecord, reason: string) {
-  writeWorkerLog(`[dynamic-worker:${record.shortKey}] stopping`, { reason });
+  appendTranscriberRuntimeLog(`dynamic-worker:${record.shortKey}`, "stopping", {
+    reason,
+    pid: record.process.pid ?? null,
+    state: record.state,
+  });
   try {
     record.process.kill();
   } catch {
     // ignore process kill errors
   }
-}
-
-let isLogInitialized = false;
-
-function writeWorkerLog(message: string, data?: unknown) {
-  const logDir = path.join(process.cwd(), "logs");
-  if (!fs.existsSync(logDir)) {
-    fs.mkdirSync(logDir, { recursive: true });
-  }
-  const logFile = path.join(logDir, "workers.log");
-
-  if (!isLogInitialized) {
-    // Reset log file on first write in this process.
-    fs.writeFileSync(logFile, "");
-    isLogInitialized = true;
-  }
-
-  const timestamp = new Date().toISOString();
-  const dataStr = data ? ` ${JSON.stringify(data)}` : "";
-  fs.appendFileSync(logFile, `[${timestamp}] ${message}${dataStr}\n`);
 }
 
 function ensureJanitorRunning() {
@@ -214,7 +199,10 @@ function spawnWorker(
       resolveReady?.();
       resolveReady = null;
       rejectReady = null;
-      writeWorkerLog(`[dynamic-worker:${record.shortKey}] ready`);
+      appendTranscriberRuntimeLog(`dynamic-worker:${record.shortKey}`, "ready", {
+        pid: child.pid ?? null,
+        startedAt: new Date(record.startedAt).toISOString(),
+      });
     },
     rejectReady: (error: unknown) => {
       if (record.state === "ready") {
@@ -224,8 +212,9 @@ function spawnWorker(
       rejectReady?.(error);
       resolveReady = null;
       rejectReady = null;
-      writeWorkerLog(`[dynamic-worker:${record.shortKey}] failed`, {
+      appendTranscriberRuntimeLog(`dynamic-worker:${record.shortKey}`, "failed", {
         error: error instanceof Error ? error.message : error,
+        pid: child.pid ?? null,
       });
     },
     startupTimeout: setTimeout(() => {
@@ -238,7 +227,7 @@ function spawnWorker(
   };
 
   const handleLogLine = (line: string, stream: "stdout" | "stderr") => {
-    writeWorkerLog(`[dynamic-worker:${record.shortKey}][${stream}] ${line}`);
+    appendTranscriberRuntimeLog(`dynamic-worker:${record.shortKey}:${stream}`, line);
     if (line.toLowerCase().includes("registered worker")) {
       clearTimeout(record.startupTimeout);
       record.resolveReady();
@@ -264,7 +253,12 @@ function spawnWorker(
     if (registry.get(key)?.instanceId === record.instanceId) {
       registry.delete(key);
     }
-    writeWorkerLog(`[dynamic-worker:${record.shortKey}] exited`, { code, signal, reason });
+    appendTranscriberRuntimeLog(`dynamic-worker:${record.shortKey}`, "exited", {
+      code,
+      signal,
+      reason,
+      pid: child.pid ?? null,
+    });
   });
 
   child.on("error", (error) => {
@@ -273,8 +267,11 @@ function spawnWorker(
     stopWorker(record, "spawn-error");
   });
 
-  writeWorkerLog(`[dynamic-worker:${record.shortKey}] starting`, {
+  appendTranscriberRuntimeLog(`dynamic-worker:${record.shortKey}`, "starting", {
     reason: reason ?? "unspecified",
+    command,
+    args,
+    pid: child.pid ?? null,
   });
 
   return record;
@@ -297,6 +294,13 @@ export async function ensureTranscriberWorker(
 
     record = spawnWorker(key, credentials, options?.reason);
     registry.set(key, record);
+  } else {
+    appendTranscriberRuntimeLog(`dynamic-worker:${record.shortKey}`, "reusing-existing-worker", {
+      reason: options?.reason ?? "unspecified",
+      state: record.state,
+      pid: record.process.pid ?? null,
+      startedAt: new Date(record.startedAt).toISOString(),
+    });
   }
 
   record.lastUsedAt = Date.now();

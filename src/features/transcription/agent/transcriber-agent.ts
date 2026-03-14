@@ -56,6 +56,19 @@ type ParticipantTranscriptionSession = {
   consumeTask: Promise<void>;
 };
 
+function previewText(text: string | undefined) {
+  if (!text) {
+    return "";
+  }
+
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 120) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, 120)}...`;
+}
+
 function logInfo(message: string, payload?: Record<string, unknown>) {
   if (payload) {
     console.info(`[transcriber] ${message}`, payload);
@@ -161,6 +174,12 @@ function updateSpeechState(session: ParticipantTranscriptionSession, roomId: str
     flushSpeechUsage(session, roomId);
   }
   session.speechState = nextState;
+  logInfo("Participant speech state changed", {
+    roomId,
+    participantIdentity: session.participant.identity,
+    previousState,
+    nextState,
+  });
 }
 
 function getRemoteParticipantMicrophonePublication(
@@ -181,6 +200,13 @@ async function clearParticipantAudioInput(
   reason: string,
   flush = true,
 ) {
+  logInfo("Clearing participant audio input", {
+    roomId,
+    participantIdentity: session.participant.identity,
+    reason,
+    flush,
+    provider: session.providerSession.runtime.provider,
+  });
   updateSpeechState(session, roomId, "listening");
   await session.providerSession.updateTrack(null, null, reason);
   if (flush && !session.closed) {
@@ -202,12 +228,27 @@ async function syncParticipantMicrophoneInput({
   }
 
   const publication = getRemoteParticipantMicrophonePublication(participant);
+  logInfo("Syncing participant microphone input", {
+    roomId,
+    participantIdentity: participant.identity,
+    hasPublication: Boolean(publication),
+    publicationSid: publication?.sid ?? null,
+    publicationSubscribed: publication?.subscribed ?? null,
+    publicationMuted: publication?.muted ?? null,
+    publicationKind: publication?.kind ?? null,
+    hasTrack: Boolean(publication?.track),
+  });
   if (!publication) {
     await clearParticipantAudioInput(session, roomId, "microphone_unpublished");
     return;
   }
 
   if (!publication.subscribed) {
+    logInfo("Subscribing to participant microphone publication", {
+      roomId,
+      participantIdentity: participant.identity,
+      trackSid: publication.sid ?? null,
+    });
     publication.setSubscribed(true);
   }
 
@@ -226,6 +267,12 @@ async function syncParticipantMicrophoneInput({
     publication.sid ?? null,
     "microphone_attached",
   );
+  logInfo("Participant microphone track attached to provider session", {
+    roomId,
+    participantIdentity: participant.identity,
+    provider: session.providerSession.runtime.provider,
+    trackSid: publication.sid ?? null,
+  });
 }
 
 async function consumeParticipantSpeechStream({
@@ -243,12 +290,31 @@ async function consumeParticipantSpeechStream({
 
       switch (event.type) {
         case "speech_started":
+          logInfo("Provider speech started", {
+            roomId,
+            participantIdentity: session.participant.identity,
+            provider: session.providerSession.runtime.provider,
+          });
           updateSpeechState(session, roomId, "speaking");
           break;
         case "speech_stopped":
+          logInfo("Provider speech stopped", {
+            roomId,
+            participantIdentity: session.participant.identity,
+            provider: session.providerSession.runtime.provider,
+          });
           updateSpeechState(session, roomId, "listening");
           break;
         case "transcript":
+          logInfo("Provider transcript event", {
+            roomId,
+            participantIdentity: session.participant.identity,
+            provider: session.providerSession.runtime.provider,
+            isFinal: event.isFinal,
+            language: event.language ?? null,
+            textLength: event.text.length,
+            textPreview: previewText(event.text),
+          });
           session.transcriptAccumulator.handleUpdate({
             transcript: event.text,
             isFinal: event.isFinal,
@@ -378,6 +444,14 @@ async function startParticipantSession({
     roomId,
   });
   sessionRegistry.set(participant.identity, session);
+  logInfo("Participant transcription session started", {
+    roomId,
+    roomRefId,
+    participantIdentity: participant.identity,
+    provider: roomVoiceRuntime.transcription.provider,
+    providerSource: roomVoiceRuntime.transcription.source,
+    model: roomVoiceRuntime.transcription.model,
+  });
 
   const remoteParticipant = ctx.room.remoteParticipants.get(participant.identity);
   if (remoteParticipant) {
@@ -461,6 +535,11 @@ export default defineAgent({
     if (!roomId) {
       throw new Error("Room name is required for transcriber agent");
     }
+    logInfo("Job started", {
+      roomId,
+      jobId: ctx.job.id,
+      hasDatabaseUrl: Boolean(process.env.DATABASE_URL?.trim()),
+    });
 
     const sessions = new Map<string, ParticipantTranscriptionSession>();
     const startingSessions = new Set<string>();
@@ -533,6 +612,12 @@ export default defineAgent({
     };
 
     ctx.addParticipantEntrypoint((jobCtx, participant) => {
+      logInfo("Participant detected", {
+        roomId,
+        participantIdentity: participant.identity,
+        participantName: participant.name,
+        participantKind: participant.kind,
+      });
       void runWithJobContextAsync(jobCtx, async () => {
         await ensureAndSyncParticipant(participant);
       }).catch((error) => {
@@ -546,6 +631,11 @@ export default defineAgent({
     });
 
     await ctx.connect(undefined, AutoSubscribe.SUBSCRIBE_ALL);
+    logInfo("Connected to room", {
+      roomId,
+      autoSubscribe: "SUBSCRIBE_ALL",
+      remoteParticipantCount: ctx.room.remoteParticipants.size,
+    });
 
     ctx.room.on(RoomEvent.TrackSubscribed, (_track, publication, participant) => {
       if (publication.source !== TrackSource.SOURCE_MICROPHONE) {
@@ -643,6 +733,11 @@ export default defineAgent({
     });
 
     ctx.room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+      logInfo("Participant disconnected", {
+        roomId,
+        participantIdentity: participant.identity,
+        participantName: participant.name,
+      });
       void closeSessionByIdentity(participant.identity, "participant_disconnected").catch((error) => {
         logError("Failed to close participant transcription session", error, {
           roomId,
@@ -652,10 +747,22 @@ export default defineAgent({
     });
 
     await Promise.allSettled(
-      [...ctx.room.remoteParticipants.values()].map(async (participant) => ensureAndSyncParticipant(participant)),
+      [...ctx.room.remoteParticipants.values()].map(async (participant) => {
+        logInfo("Existing participant detected", {
+          roomId,
+          participantIdentity: participant.identity,
+          participantName: participant.name,
+          participantKind: participant.kind,
+        });
+        await ensureAndSyncParticipant(participant);
+      }),
     );
 
     ctx.addShutdownCallback(async () => {
+      logInfo("Shutdown callback started", {
+        roomId,
+        activeSessions: sessions.size,
+      });
       await Promise.allSettled(
         [...sessions.values()].map(async (session) => {
           await closeParticipantSession({
@@ -667,6 +774,9 @@ export default defineAgent({
         }),
       );
       await prisma.$disconnect();
+      logInfo("Shutdown callback completed", {
+        roomId,
+      });
     });
   },
 });
