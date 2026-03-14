@@ -39,6 +39,7 @@ export async function GET(_request: Request, context: RouteContext) {
         roomId: runtimeInfo.room.roomId,
         roomName: runtimeInfo.room.name,
         status: runtimeInfo.room.status,
+        analysisEnabled: runtimeInfo.room.analysisEnabled,
         endedAt: runtimeInfo.room.endedAt?.toISOString() ?? null,
         isCreator: runtimeInfo.isCreator,
         ownerPresence: {

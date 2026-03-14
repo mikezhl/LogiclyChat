@@ -3,6 +3,10 @@ import crypto from "node:crypto";
 import { AnalysisEventType } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import {
+  advanceRealtimeAnalysisCursorToMessage,
+  isRealtimeAnalysisEnabledForRoom,
+} from "./analysis-control";
 
 const DEFAULT_EVENT_BATCH_SIZE = 200;
 
@@ -23,6 +27,12 @@ function buildFinalSummaryEventDedupeKey(roomRefId: string) {
 }
 
 export async function enqueueRealtimeAnalysisEvent(roomRefId: string, messageId: string) {
+  const analysisEnabled = await isRealtimeAnalysisEnabledForRoom(roomRefId);
+  if (!analysisEnabled) {
+    await advanceRealtimeAnalysisCursorToMessage(roomRefId, messageId);
+    return;
+  }
+
   const dedupeKey = buildRealtimeEventDedupeKey(messageId);
 
   await prisma.roomAnalysisEvent.create({

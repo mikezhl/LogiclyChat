@@ -77,6 +77,7 @@ type RoomMetaResponse = {
     roomId: string;
     roomName: string | null;
     status: "ACTIVE" | "ENDED";
+    analysisEnabled: boolean;
     endedAt: string | null;
     isCreator: boolean;
     ownerPresence: {
@@ -107,6 +108,7 @@ type TranscriptionState = "idle" | "starting" | "ready" | "disabled";
 type RoomMetaState = {
   roomName: string | null;
   status: "ACTIVE" | "ENDED";
+  analysisEnabled: boolean;
   endedAt: string | null;
   isCreator: boolean;
   ownerPresence: {
@@ -617,6 +619,7 @@ export default function RoomPageClient({ roomId, initialRoomName, userId, userna
   const [roomMeta, setRoomMeta] = useState<RoomMetaState>({
     roomName: initialRoomName,
     status: "ACTIVE",
+    analysisEnabled: true,
     endedAt: null,
     isCreator: false,
     ownerPresence: {
@@ -677,6 +680,7 @@ export default function RoomPageClient({ roomId, initialRoomName, userId, userna
   const [roomError, setRoomError] = useState("");
   const [sendingText, setSendingText] = useState(false);
   const [endingRoom, setEndingRoom] = useState(false);
+  const [analysisTogglePending, setAnalysisTogglePending] = useState(false);
   const [speakerMode, setSpeakerMode] = useState<RoomSpeakerMode>("self");
   const [speakerSwitchPending, setSpeakerSwitchPending] = useState(false);
   const [transcriptionState, setTranscriptionState] = useState<TranscriptionState>("idle");
@@ -861,6 +865,7 @@ export default function RoomPageClient({ roomId, initialRoomName, userId, userna
     setRoomMeta({
       roomName: payload.room.roomName,
       status: payload.room.status,
+      analysisEnabled: payload.room.analysisEnabled,
       endedAt: payload.room.endedAt,
       isCreator: payload.room.isCreator,
       ownerPresence: payload.room.ownerPresence,
@@ -1208,6 +1213,42 @@ export default function RoomPageClient({ roomId, initialRoomName, userId, userna
 
     setHasAutoConnectAttempted(false);
     disconnectRoom();
+  }
+
+  async function toggleRealtimeAnalysis() {
+    if (!roomMeta.isCreator || analysisTogglePending || roomMeta.status === "ENDED") {
+      return;
+    }
+
+    setAnalysisTogglePending(true);
+    setRoomError("");
+    try {
+      const response = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/analysis`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: !roomMeta.analysisEnabled,
+        }),
+      });
+      const payload = (await response.json()) as {
+        room?: { analysisEnabled: boolean };
+        error?: string;
+      };
+      if (!response.ok || !payload.room) {
+        throw new Error(payload.error ?? t("更新分析开关失败", "Failed to update analysis toggle"));
+      }
+
+      setRoomMeta((current) => ({
+        ...current,
+        analysisEnabled: payload.room!.analysisEnabled,
+      }));
+    } catch (error) {
+      setRoomError(
+        error instanceof Error ? error.message : t("更新分析开关失败", "Failed to update analysis toggle"),
+      );
+    } finally {
+      setAnalysisTogglePending(false);
+    }
   }
 
   async function endConversation() {
@@ -1827,9 +1868,11 @@ export default function RoomPageClient({ roomId, initialRoomName, userId, userna
           <h4>{t("服务状态", "Providers")}</h4>
           <div className="key-status-grid" style={{ fontSize: '0.75rem', gap: '8px', background: 'transparent', padding: 0 }}>
             <div className="provider-tooltip">
-              <div className="room-status provider-chip" style={{ width: '100%', justifyContent: 'space-between', cursor: 'help' }} tabIndex={0}>
-                <span>Voice</span>
-                <strong>{getVoiceProviderLabel(roomMeta.providers.voice, language)}</strong>
+              <div className="room-status provider-chip provider-chip-panel" tabIndex={0}>
+                <div className="provider-chip-main">
+                  <span className="provider-chip-label">{t("语音与转录", "Voice & Transcription")}</span>
+                  <strong className="provider-chip-value">{getVoiceProviderLabel(roomMeta.providers.voice, language)}</strong>
+                </div>
               </div>
               <div className="provider-popover" role="tooltip">
                 <div className="provider-popover-title">
@@ -1845,13 +1888,38 @@ export default function RoomPageClient({ roomId, initialRoomName, userId, userna
             </div>
 
             <div className="provider-tooltip">
-              <div className="room-status provider-chip" style={{ width: '100%', justifyContent: 'space-between', cursor: 'help' }} tabIndex={0}>
-                <span>Analysis</span>
-                <strong>{getAnalysisProviderLabel(roomMeta.providers.analysis, language)}</strong>
+              <div className="room-status provider-chip provider-chip-panel" tabIndex={0}>
+                <div className="provider-chip-main">
+                  <span className="provider-chip-label">{t("大模型分析", "LLM Analysis")}</span>
+                  <strong className="provider-chip-value">{getAnalysisProviderLabel(roomMeta.providers.analysis, language)}</strong>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={roomMeta.analysisEnabled}
+                  aria-label={t("切换实时大模型分析", "Toggle realtime LLM analysis")}
+                  className={`provider-chip-switch ${roomMeta.analysisEnabled ? "active" : ""}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void toggleRealtimeAnalysis();
+                  }}
+                  disabled={!roomMeta.isCreator || analysisTogglePending || roomMeta.status === "ENDED"}
+                >
+                  <span className="provider-chip-switch-track">
+                    <span className="provider-chip-switch-thumb" />
+                  </span>
+                  <span className="provider-chip-switch-text">
+                    {analysisTogglePending
+                      ? "..."
+                      : roomMeta.analysisEnabled
+                        ? t("开", "On")
+                        : t("关", "Off")}
+                  </span>
+                </button>
               </div>
               <div className="provider-popover" role="tooltip">
                 <div className="provider-popover-title">
-                  {t("分析模块", "Analysis")}
+                  {t("大模型分析", "LLM Analysis")}
                 </div>
                 {getAnalysisProviderDetails(roomMeta.providers.analysis, language).map((item) => (
                   <div key={`analysis-${item.label}`} className="provider-popover-row">

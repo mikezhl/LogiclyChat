@@ -12,6 +12,7 @@ import { toChatMessage } from "@/lib/messages";
 import { getRoomNameFromAnalysisPayload } from "@/lib/room-name";
 import { prisma } from "@/lib/prisma";
 import { recordLlmUsageForOwner } from "@/lib/usage-stats";
+import { isRealtimeAnalysisEnabledForRoom } from "./analysis-control";
 import { compactConversationForAnalysis } from "./dialogue-compact";
 
 const REALTIME_ANALYSIS_SENDER = "AI Analyst";
@@ -99,6 +100,7 @@ export async function executeRealtimeAnalysisForRoomRef(roomRefId: string): Prom
       roomId: true,
       name: true,
       status: true,
+      analysisEnabled: true,
       createdById: true,
     },
   });
@@ -107,6 +109,9 @@ export async function executeRealtimeAnalysisForRoomRef(roomRefId: string): Prom
   }
   if (room.status === RoomStatus.ENDED) {
     return { executed: false, reason: "room-ended" };
+  }
+  if (!room.analysisEnabled) {
+    return { executed: false, reason: "analysis-disabled" };
   }
 
   const state = await prisma.roomAnalysisState.findUnique({
@@ -127,6 +132,11 @@ export async function executeRealtimeAnalysisForRoomRef(roomRefId: string): Prom
 
   if (!compacted.hasCurrentRound || !compacted.latestCurrentMessageId || !compacted.latestCurrentMessageAt) {
     return { executed: false, reason: "no-new-round" };
+  }
+
+  const analysisEnabled = await isRealtimeAnalysisEnabledForRoom(roomRefId);
+  if (!analysisEnabled) {
+    return { executed: false, reason: "analysis-disabled" };
   }
 
   const llmRuntime = await resolveConversationLlmRuntimeForOwner(room.createdById);

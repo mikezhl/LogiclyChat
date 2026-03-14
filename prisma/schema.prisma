@@ -34,6 +34,7 @@ model Room {
   roomId       String            @unique
   name         String?
   status       RoomStatus        @default(ACTIVE)
+  analysisEnabled Boolean        @default(true)
   endedAt      DateTime?
   createdById  String?
   createdBy    User?             @relation("CreatedRooms", fields: [createdById], references: [id], onDelete: SetNull)
