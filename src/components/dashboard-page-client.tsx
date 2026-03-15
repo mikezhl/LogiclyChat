@@ -614,9 +614,13 @@ export default function DashboardPageClient({
               </button>
               {isAuthenticated ? (
                 <>
-                  <span className="user-chip">{user?.username}</span>
+                  <span className="user-chip">
+                    <span className="desktop-only">{user?.username}</span>
+                    <span className="mobile-only">{user?.username?.substring(0, 8)}{user?.username && user.username.length > 8 ? '...' : ''}</span>
+                  </span>
                   <button type="button" className="ghost-btn" onClick={() => void handleLogout()}>
-                    {t("退出登录", "Sign Out")}
+                    <span className="desktop-only">{t("退出登录", "Sign Out")}</span>
+                    <span className="mobile-only">{t("退出", "Out")}</span>
                   </button>
                 </>
               ) : (
@@ -667,7 +671,7 @@ export default function DashboardPageClient({
                 <button type="submit" className="primary-btn large-btn" disabled={roomActionLoading !== null}>
                   {roomActionLoading === "join"
                     ? t("加入中...", "Joining...")
-                    : t("加入房间", "Join Room")}
+                    : t("加入", "Join")}
                 </button>
               </form>
             </div>

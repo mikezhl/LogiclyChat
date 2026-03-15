@@ -688,6 +688,11 @@ export default function RoomPageClient({ roomId, initialRoomName, userId, userna
   
   const [rawMessageId, setRawMessageId] = useState<string | null>(null);
   const [showEndRoomConfirm, setShowEndRoomConfirm] = useState(false);
+  const [showSwitchConfirm, setShowSwitchConfirm] = useState(false);
+  const [hasConfirmedSwitchOnce, setHasConfirmedSwitchOnce] = useState(false);
+  const [showMobileAnalysis, setShowMobileAnalysis] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [activeStatusTooltip, setActiveStatusTooltip] = useState<"connection" | "transcription" | null>(null);
 
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const voiceProviderRef = useRef(roomMeta.providers.voice);
@@ -1560,6 +1565,16 @@ export default function RoomPageClient({ roomId, initialRoomName, userId, userna
     }).catch(() => undefined);
   }, [roomId, roomMeta.isCreator, roomMeta.ownerPresence.active, roomMeta.status]);
 
+  const copyRoomId = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(roomId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Ignore copy errors
+    }
+  }, [roomId]);
+
   const isEnded = roomMeta.status === "ENDED";
   const ownerActive = roomMeta.isCreator || roomMeta.ownerPresence.active;
   const roomInteractionBlocked = isEnded || !ownerActive;
@@ -1573,6 +1588,134 @@ export default function RoomPageClient({ roomId, initialRoomName, userId, userna
   const scores = analysisViewState.scores;
   const overallInsights = analysisViewState.overallInsights;
   const suggestions = analysisViewState.suggestions;
+
+  const renderSidebarContent = () => (
+    <>
+      <div className="sidebar-section">
+        <h4>{t("实时比分", "Real-time Score")}</h4>
+        <div className="score-card">
+          <div className="score-box">
+            <span className="label">{t("我方", "Our Side")}</span>
+            <span className="value" style={{ color: scores.own >= scores.other ? 'var(--primary)' : 'inherit' }}>{scores.own}</span>
+          </div>
+          <div className="score-box">
+            <span className="label">{t("对方", "Other Side")}</span>
+            <span className="value" style={{ color: scores.other >= scores.own ? 'var(--primary)' : 'inherit' }}>{scores.other}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="sidebar-section">
+        <h4>{t("双方观点", "Perspectives")}</h4>
+        <div className="overall-insight-box">
+          <div className="overall-insight-item">
+            <strong>{t("我方", "Our Side")}</strong>
+            <p className="analysis-insight" style={{ fontSize: '0.85rem' }}>{overallInsights.own || t("暂无洞察", "No insights yet")}</p>
+          </div>
+          <div style={{ height: '1px', background: 'var(--line)' }} />
+          <div className="overall-insight-item">
+            <strong>{t("对方", "Other Side")}</strong>
+            <p className="analysis-insight" style={{ fontSize: '0.85rem' }}>{overallInsights.other || t("暂无洞察", "No insights yet")}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="sidebar-section">
+        <h4>{t("建议", "Suggestions")}</h4>
+        <div className="overall-insight-box">
+          <div className="overall-insight-item">
+            <strong>{t("我方", "Our Side")}</strong>
+            {suggestions.own.length > 0 ? (
+              <ul style={{ paddingLeft: '16px', margin: '4px 0', fontSize: '0.85rem', color: 'var(--muted)' }}>
+                {suggestions.own.map((s, i) => <li key={i}>{s}</li>)}
+              </ul>
+            ) : (
+              <p className="analysis-insight" style={{ fontSize: '0.85rem' }}>{t("暂无建议", "No suggestions yet")}</p>
+            )}
+          </div>
+          <div style={{ height: '1px', background: 'var(--line)' }} />
+          <div className="overall-insight-item">
+            <strong>{t("对方", "Other Side")}</strong>
+            {suggestions.other.length > 0 ? (
+              <ul style={{ paddingLeft: '16px', margin: '4px 0', fontSize: '0.85rem', color: 'var(--muted)' }}>
+                {suggestions.other.map((s, i) => <li key={i}>{s}</li>)}
+              </ul>
+            ) : (
+              <p className="analysis-insight" style={{ fontSize: '0.85rem' }}>{t("暂无建议", "No suggestions yet")}</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="sidebar-section" style={{ marginTop: 'auto' }}>
+        <h4>{t("服务状态", "Providers")}</h4>
+        <div className="key-status-grid" style={{ fontSize: '0.75rem', gap: '8px', background: 'transparent', padding: 0 }}>
+          <div className="provider-tooltip">
+            <div className="room-status provider-chip provider-chip-panel" tabIndex={0}>
+              <div className="provider-chip-main">
+                <span className="provider-chip-label">{t("语音与转录", "Voice & Transcription")}</span>
+                <strong className="provider-chip-value">{getVoiceProviderLabel(roomMeta.providers.voice, language)}</strong>
+              </div>
+            </div>
+            <div className="provider-popover" role="tooltip">
+              <div className="provider-popover-title">
+                {t("语音与转录", "Voice & Transcription")}
+              </div>
+              {getVoiceProviderDetails(roomMeta.providers.voice, language).map((item) => (
+                <div key={`voice-${item.label}`} className="provider-popover-row">
+                  <span className="provider-popover-label">{item.label}</span>
+                  <strong className="provider-popover-value">{item.value}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="provider-tooltip">
+            <div className="room-status provider-chip provider-chip-panel" tabIndex={0}>
+              <div className="provider-chip-main">
+                <span className="provider-chip-label">{t("大模型分析", "LLM Analysis")}</span>
+                <strong className="provider-chip-value">{getAnalysisProviderLabel(roomMeta.providers.analysis, language)}</strong>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={roomMeta.analysisEnabled}
+                aria-label={t("切换实时大模型分析", "Toggle realtime LLM analysis")}
+                className={`provider-chip-switch ${roomMeta.analysisEnabled ? "active" : ""}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void toggleRealtimeAnalysis();
+                }}
+                disabled={!roomMeta.isCreator || analysisTogglePending || roomMeta.status === "ENDED"}
+              >
+                <span className="provider-chip-switch-track">
+                  <span className="provider-chip-switch-thumb" />
+                </span>
+                <span className="provider-chip-switch-text">
+                  {analysisTogglePending
+                    ? "..."
+                    : roomMeta.analysisEnabled
+                      ? t("开", "On")
+                      : t("关", "Off")}
+                </span>
+              </button>
+            </div>
+            <div className="provider-popover" role="tooltip">
+              <div className="provider-popover-title">
+                {t("大模型分析", "LLM Analysis")}
+              </div>
+              {getAnalysisProviderDetails(roomMeta.providers.analysis, language).map((item) => (
+                <div key={`analysis-${item.label}`} className="provider-popover-row">
+                  <span className="provider-popover-label">{item.label}</span>
+                  <strong className="provider-popover-value">{item.value}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
 
   // Helper to render AI Analysis
   const AnalysisMessage = ({ message }: { message: ChatMessage }) => {
@@ -1655,25 +1798,68 @@ export default function RoomPageClient({ roomId, initialRoomName, userId, userna
       <section className="room-shell room-shell-chat">
         <header className="room-header">
           <div className="room-header-title">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <h1>{roomDisplayName}</h1>
-              <span className={`room-status ${roomConnectionStatusClass}`}>
-                {connectionState === "connected"
-                  ? t("已连接", "Connected")
-                  : connectionState === "connecting" || isInitialConnectionPending
-                    ? t("连接中", "Connecting")
-                    : t("断开", "Disconnected")}
-              </span>
-              <span className={`room-status transcription-status ${transcriptionState}`}>
-                {transcriptionState === "ready"
-                  ? t("转录中", "Transcription On")
-                  : transcriptionState === "starting"
-                    ? t("启动中", "Starting")
-                    : t("转录关", "Transcription Off")}
-              </span>
+              
+              <div style={{ position: 'relative' }}>
+                <span 
+                  className={`room-status ${roomConnectionStatusClass}`}
+                  onClick={() => setActiveStatusTooltip(activeStatusTooltip === "connection" ? null : "connection")}
+                >
+                  <span className="status-icon">C</span>
+                  <span className="status-label-text">
+                    {connectionState === "connected"
+                      ? t("已连接", "Connected")
+                      : connectionState === "connecting" || isInitialConnectionPending
+                        ? t("连接中", "Connecting")
+                        : t("断开", "Disconnected")}
+                  </span>
+                </span>
+                {activeStatusTooltip === "connection" && (
+                  <div className="status-tooltip">
+                    {connectionState === "connected"
+                      ? t("房间连接成功", "Room Connected")
+                      : connectionState === "connecting" || isInitialConnectionPending
+                        ? t("正在连接房间...", "Connecting to Room...")
+                        : t("房间连接已断开", "Room Disconnected")}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ position: 'relative' }}>
+                <span 
+                  className={`room-status transcription-status ${transcriptionState}`}
+                  onClick={() => setActiveStatusTooltip(activeStatusTooltip === "transcription" ? null : "transcription")}
+                >
+                  <span className="status-icon">T</span>
+                  <span className="status-label-text">
+                    {transcriptionState === "ready"
+                      ? t("转录中", "Transcription On")
+                      : transcriptionState === "starting"
+                        ? t("启动中", "Starting")
+                        : t("转录关", "Transcription Off")}
+                  </span>
+                </span>
+                {activeStatusTooltip === "transcription" && (
+                  <div className="status-tooltip">
+                    {transcriptionState === "ready"
+                      ? t("实时语音转录已开启", "Transcription Active")
+                      : transcriptionState === "starting"
+                        ? t("正在启动转录引擎...", "Starting Transcription...")
+                        : t("语音转录未开启", "Transcription Disabled")}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="room-meta-row">
-              <span className="room-header-code">{roomId}</span>
+              <span 
+                className="room-header-code" 
+                onClick={() => void copyRoomId()}
+                title={t("点击复制房间号", "Click to copy room ID")}
+              >
+                {roomId}
+                {copied && <span className="copy-tooltip">{t("已复制", "Copied")}</span>}
+              </span>
               <span style={{ opacity: 0.5 }}>|</span>
               <span>@{username}</span>
               {roomMeta.features.speakerSwitchEnabled && currentSpeakerName !== username && (
@@ -1684,23 +1870,42 @@ export default function RoomPageClient({ roomId, initialRoomName, userId, userna
               )}
             </div>
           </div>
+          <Link className="room-back-link" href="/" title={t("返回", "Back")}>
+            <span className="desktop-only ghost-btn" style={{ height: '40px' }}>{t("返回", "Back")}</span>
+            <span className="mobile-only-flex back-icon-btn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+              </svg>
+            </span>
+          </Link>
           <div className="room-actions">
-            <Link className="ghost-btn" style={{ height: '40px' }} href="/">
-              {t("返回主页", "Back to Home")}
-            </Link>
+            <button
+              type="button"
+              className="ghost-btn mobile-only-flex"
+              style={{ height: '40px' }}
+              onClick={() => setShowMobileAnalysis(true)}
+            >
+              {t("详情", "Details")}
+            </button>
             {roomMeta.features.speakerSwitchEnabled && (
               <button
                 type="button"
                 className="ghost-btn"
                 style={{ height: '40px' }}
-                onClick={() => void switchSpeakerMode()}
+                onClick={() => {
+                  if (hasConfirmedSwitchOnce) {
+                    void switchSpeakerMode();
+                  } else {
+                    setShowSwitchConfirm(true);
+                  }
+                }}
                 disabled={isEnded || connectionState === "connecting" || speakerSwitchPending}
               >
                 {speakerSwitchPending 
                   ? "..." 
                   : speakerMode === "self" 
-                    ? t("模拟对方发言", "Simulate Other") 
-                    : t("退出模拟发言", "Exit Simulation")}
+                    ? <><span className="desktop-only">{t("切换", "Switch")}</span><span className="mobile-only">{t("切换", "Switch")}</span></>
+                    : <><span className="desktop-only">{t("退出切换", "Exit")}</span><span className="mobile-only">{t("退出", "Exit")}</span></>}
               </button>
             )}
             {roomMeta.isCreator && (
@@ -1711,7 +1916,7 @@ export default function RoomPageClient({ roomId, initialRoomName, userId, userna
                 onClick={() => setShowEndRoomConfirm(true)} 
                 disabled={endingRoom || isEnded}
               >
-                {endingRoom ? "..." : t("结束房间", "End Room")}
+                {endingRoom ? "..." : <><span className="desktop-only">{t("结束房间", "End Room")}</span><span className="mobile-only">{t("结束", "End")}</span></>}
               </button>
             )}
           </div>
@@ -1779,159 +1984,52 @@ export default function RoomPageClient({ roomId, initialRoomName, userId, userna
             disabled={roomInteractionBlocked}
             rows={1}
           />
-          <button type="submit" className="primary-btn" disabled={sendingText || roomInteractionBlocked}>
-            {t("发送", "Send")}
-          </button>
-          
-          {connectionState === "connected" ? (
-            <button
-              type="button"
-              className={micEnabled ? "primary-btn" : "ghost-btn"}
-              onClick={() => void (micEnabled ? leaveVoiceCall() : startVoiceCall())}
-              disabled={roomInteractionBlocked}
-            >
-              {micEnabled ? t("退出通话", "Leave") : t("通话", "Call")}
+          <div className="room-chat-controls">
+            {connectionState === "connected" ? (
+              <button
+                type="button"
+                className={micEnabled ? "primary-btn" : "ghost-btn"}
+                onClick={() => void (micEnabled ? leaveVoiceCall() : startVoiceCall())}
+                disabled={roomInteractionBlocked}
+              >
+                {micEnabled ? t("退出通话", "Leave") : t("通话", "Call")}
+              </button>
+            ) : !roomInteractionBlocked && (
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => void connectRoom()}
+                disabled={connectionState === "connecting"}
+              >
+                {t("重连", "Reconnect")}
+              </button>
+            )}
+
+            <button type="submit" className="primary-btn" disabled={sendingText || roomInteractionBlocked}>
+              {t("发送", "Send")}
             </button>
-          ) : !roomInteractionBlocked && (
-            <button
-              type="button"
-              className="ghost-btn"
-              onClick={() => void connectRoom()}
-              disabled={connectionState === "connecting"}
-            >
-              {t("重连", "Reconnect")}
-            </button>
-          )}
+          </div>
         </form>
 
         <div ref={audioContainerRef} className="audio-container" />
       </section>
 
       <aside className="room-sidebar">
-        <div className="sidebar-section">
-          <h4>{t("实时比分", "Real-time Score")}</h4>
-          <div className="score-card">
-            <div className="score-box">
-              <span className="label">{t("我方", "Our Side")}</span>
-              <span className="value" style={{ color: scores.own >= scores.other ? 'var(--primary)' : 'inherit' }}>{scores.own}</span>
-            </div>
-            <div className="score-box">
-              <span className="label">{t("对方", "Other Side")}</span>
-              <span className="value" style={{ color: scores.other >= scores.own ? 'var(--primary)' : 'inherit' }}>{scores.other}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="sidebar-section">
-          <h4>{t("双方观点", "Perspectives")}</h4>
-          <div className="overall-insight-box">
-            <div className="overall-insight-item">
-              <strong>{t("我方", "Our Side")}</strong>
-              <p className="analysis-insight" style={{ fontSize: '0.85rem' }}>{overallInsights.own || t("暂无洞察", "No insights yet")}</p>
-            </div>
-            <div style={{ height: '1px', background: 'var(--line)' }} />
-            <div className="overall-insight-item">
-              <strong>{t("对方", "Other Side")}</strong>
-              <p className="analysis-insight" style={{ fontSize: '0.85rem' }}>{overallInsights.other || t("暂无洞察", "No insights yet")}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="sidebar-section">
-          <h4>{t("建议", "Suggestions")}</h4>
-          <div className="overall-insight-box">
-            <div className="overall-insight-item">
-              <strong>{t("我方", "Our Side")}</strong>
-              {suggestions.own.length > 0 ? (
-                <ul style={{ paddingLeft: '16px', margin: '4px 0', fontSize: '0.85rem', color: 'var(--muted)' }}>
-                  {suggestions.own.map((s, i) => <li key={i}>{s}</li>)}
-                </ul>
-              ) : (
-                <p className="analysis-insight" style={{ fontSize: '0.85rem' }}>{t("暂无建议", "No suggestions yet")}</p>
-              )}
-            </div>
-            <div style={{ height: '1px', background: 'var(--line)' }} />
-            <div className="overall-insight-item">
-              <strong>{t("对方", "Other Side")}</strong>
-              {suggestions.other.length > 0 ? (
-                <ul style={{ paddingLeft: '16px', margin: '4px 0', fontSize: '0.85rem', color: 'var(--muted)' }}>
-                  {suggestions.other.map((s, i) => <li key={i}>{s}</li>)}
-                </ul>
-              ) : (
-                <p className="analysis-insight" style={{ fontSize: '0.85rem' }}>{t("暂无建议", "No suggestions yet")}</p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="sidebar-section" style={{ marginTop: 'auto' }}>
-          <h4>{t("服务状态", "Providers")}</h4>
-          <div className="key-status-grid" style={{ fontSize: '0.75rem', gap: '8px', background: 'transparent', padding: 0 }}>
-            <div className="provider-tooltip">
-              <div className="room-status provider-chip provider-chip-panel" tabIndex={0}>
-                <div className="provider-chip-main">
-                  <span className="provider-chip-label">{t("语音与转录", "Voice & Transcription")}</span>
-                  <strong className="provider-chip-value">{getVoiceProviderLabel(roomMeta.providers.voice, language)}</strong>
-                </div>
-              </div>
-              <div className="provider-popover" role="tooltip">
-                <div className="provider-popover-title">
-                  {t("语音与转录", "Voice & Transcription")}
-                </div>
-                {getVoiceProviderDetails(roomMeta.providers.voice, language).map((item) => (
-                  <div key={`voice-${item.label}`} className="provider-popover-row">
-                    <span className="provider-popover-label">{item.label}</span>
-                    <strong className="provider-popover-value">{item.value}</strong>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="provider-tooltip">
-              <div className="room-status provider-chip provider-chip-panel" tabIndex={0}>
-                <div className="provider-chip-main">
-                  <span className="provider-chip-label">{t("大模型分析", "LLM Analysis")}</span>
-                  <strong className="provider-chip-value">{getAnalysisProviderLabel(roomMeta.providers.analysis, language)}</strong>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={roomMeta.analysisEnabled}
-                  aria-label={t("切换实时大模型分析", "Toggle realtime LLM analysis")}
-                  className={`provider-chip-switch ${roomMeta.analysisEnabled ? "active" : ""}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void toggleRealtimeAnalysis();
-                  }}
-                  disabled={!roomMeta.isCreator || analysisTogglePending || roomMeta.status === "ENDED"}
-                >
-                  <span className="provider-chip-switch-track">
-                    <span className="provider-chip-switch-thumb" />
-                  </span>
-                  <span className="provider-chip-switch-text">
-                    {analysisTogglePending
-                      ? "..."
-                      : roomMeta.analysisEnabled
-                        ? t("开", "On")
-                        : t("关", "Off")}
-                  </span>
-                </button>
-              </div>
-              <div className="provider-popover" role="tooltip">
-                <div className="provider-popover-title">
-                  {t("大模型分析", "LLM Analysis")}
-                </div>
-                {getAnalysisProviderDetails(roomMeta.providers.analysis, language).map((item) => (
-                  <div key={`analysis-${item.label}`} className="provider-popover-row">
-                    <span className="provider-popover-label">{item.label}</span>
-                    <strong className="provider-popover-value">{item.value}</strong>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+        {renderSidebarContent()}
       </aside>
+
+      {/* Mobile Analysis Drawer */}
+      <div 
+        className={`mobile-analysis-overlay ${showMobileAnalysis ? 'active' : ''}`} 
+        onClick={() => setShowMobileAnalysis(false)} 
+      />
+      <div className={`mobile-analysis-drawer ${showMobileAnalysis ? 'active' : ''}`}>
+        <button className="drawer-close-btn" onClick={() => setShowMobileAnalysis(false)}>
+          ✕
+        </button>
+        <h2 style={{ margin: '0 0 8px', fontSize: '1.4rem', fontWeight: 800 }}>{t("分析与统计", "Analysis & Stats")}</h2>
+        {renderSidebarContent()}
+      </div>
 
       {showEndRoomConfirm && (
         <div className="auth-modal-overlay">
@@ -1961,7 +2059,43 @@ export default function RoomPageClient({ roomId, initialRoomName, userId, userna
                   void endConversation();
                 }}
               >
-                {t("确认结束", "Confirm End")}
+                {t("确认", "Confirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSwitchConfirm && (
+        <div className="auth-modal-overlay">
+          <div className="auth-modal">
+            <header className="auth-modal-header">
+              <h2>{t("确认切换身份", "Confirm Switch Identity")}</h2>
+            </header>
+            <div style={{ marginBottom: '24px', lineHeight: '1.6', color: 'var(--muted)' }}>
+              {t(
+                "你将切换到你的模拟对手，你可以使用该模式测试或者在同一设备上双人辩论。",
+                "You will switch to your simulated opponent. You can use this mode for testing or for a two-person debate on the same device."
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button 
+                className="ghost-btn" 
+                style={{ flex: 1 }}
+                onClick={() => setShowSwitchConfirm(false)}
+              >
+                {t("取消", "Cancel")}
+              </button>
+              <button 
+                className="primary-btn" 
+                style={{ flex: 1 }}
+                onClick={() => {
+                  setShowSwitchConfirm(false);
+                  setHasConfirmedSwitchOnce(true);
+                  void switchSpeakerMode();
+                }}
+              >
+                {t("确认", "Confirm")}
               </button>
             </div>
           </div>

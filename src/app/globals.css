@@ -183,13 +183,29 @@ a:focus-visible {
   align-items: stretch;
 }
 
-@media (max-width: 640px) {
-  .room-quick-actions {
-    grid-template-columns: 1fr;
+@media (max-width: 768px) {
+  .dashboard-page.minimal-page {
+    padding: 16px 16px 32px; /* 减小顶部间距 */
   }
 
-  .join-room-form {
+  .minimal-shell {
+    gap: 24px; /* 减小组件间的间隙 */
+  }
+  
+  .minimal-header {
     flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+    padding-bottom: 0; /* 移除冗余的底部间距 */
+  }
+  
+  .header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .room-quick-actions {
+    grid-template-columns: 1fr;
   }
 
   .usage-summary-grid {
@@ -754,6 +770,52 @@ a:focus-visible {
   .room-sidebar {
     display: none;
   }
+
+  .room-page {
+    flex-direction: column;
+  }
+  
+  .room-shell {
+    padding: 16px 0;
+  }
+
+  .room-header {
+    padding: 0 16px 16px;
+    gap: 16px;
+  }
+  
+  .room-header-title h1 {
+    font-size: 1.5rem;
+  }
+
+  .message-row {
+    width: calc(100% - 32px);
+  }
+
+  .bubble {
+    font-size: 0.95rem;
+    padding: 10px 14px;
+  }
+
+  .chat-form.room-chat-form {
+    width: calc(100% - 24px);
+    padding: 8px;
+    border-radius: 16px;
+    margin: 8px auto 0;
+  }
+  
+  .chat-form.room-chat-form textarea {
+    padding: 12px;
+    font-size: 1rem;
+    height: 48px;
+    min-height: 48px;
+  }
+  
+  .chat-form.room-chat-form button {
+    height: 36px;
+    padding: 0 14px;
+    font-size: 0.85rem;
+  }
 }
 
 .room-shell {
@@ -777,11 +839,49 @@ a:focus-visible {
 .room-header {
   width: 100%;
   padding: 0 24px 20px;
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
+  display: grid;
+  grid-template-areas: "title back actions";
+  grid-template-columns: 1fr auto auto;
+  column-gap: 10px; /* 匹配按钮组内部的 10px 间距 */
+  row-gap: 24px;
   align-items: flex-start;
-  flex-wrap: wrap;
+}
+
+.room-header-title { 
+  grid-area: title;
+  margin-right: 14px; /* 补偿间距，使标题与第一个按钮保持 24px 距离 (14+10) */
+}
+.room-actions { grid-area: actions; }
+.room-back-link { 
+  grid-area: back; 
+}
+
+@media (max-width: 1100px) {
+  .room-header {
+    grid-template-areas: 
+      "title back"
+      "actions actions";
+    grid-template-columns: 1fr auto;
+    gap: 16px;
+    padding: 0 16px 16px;
+  }
+}
+
+.back-icon-btn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--foreground);
+  transition: all 0.2s;
+}
+
+.back-icon-btn:hover {
+  background: var(--line-strong);
 }
 
 .room-header-title {
@@ -808,6 +908,42 @@ a:focus-visible {
   color: var(--muted);
   font-size: 0.85rem;
   font-family: var(--font-mono);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.room-header-code:hover {
+  background: var(--surface);
+  color: var(--foreground);
+}
+
+.copy-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--foreground);
+  color: var(--background);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: fadeInOut 2s ease-in-out forwards;
+  z-index: 100;
+}
+
+@keyframes fadeInOut {
+  0% { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  15% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  85% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-4px); }
 }
 
 .room-meta-row {
@@ -837,6 +973,51 @@ a:focus-visible {
   display: inline-flex;
   align-items: center;
   height: 28px;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.room-status:hover {
+  filter: brightness(0.95);
+}
+
+.status-icon {
+  display: none;
+  font-size: 0.7rem;
+}
+
+@media (max-width: 600px) {
+  .room-status {
+    width: 28px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 50%;
+  }
+  
+  .room-status .status-label-text {
+    display: none;
+  }
+  
+  .status-icon {
+    display: block;
+  }
+}
+
+.status-tooltip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  background: var(--foreground);
+  color: var(--background);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  z-index: 110;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  pointer-events: none;
 }
 
 .room-status.connected {
@@ -1069,7 +1250,7 @@ a:focus-visible {
   margin: 16px auto 0;
   display: flex;
   gap: 12px;
-  align-items: flex-end;
+  align-items: center; /* 改为居中对齐，解决起始位置偏下的感觉 */
   background: var(--card);
   padding: 12px;
   border-radius: 20px;
@@ -1083,11 +1264,13 @@ a:focus-visible {
   flex: 1;
   border: none;
   background: transparent;
-  padding: 16px;
-  height: 64px;
-  min-height: 64px;
+  padding: 12px 16px; /* 调整内边距，配合居中对齐 */
+  height: 48px;
+  min-height: 48px;
   font-size: 1.05rem;
   resize: none;
+  display: flex;
+  align-items: center;
 }
 
 .chat-form.room-chat-form textarea:focus {
@@ -1099,12 +1282,56 @@ a:focus-visible {
   padding: 0 20px;
 }
 
+.room-chat-controls {
+  display: flex;
+  flex-direction: row; /* 默认横向并排 */
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.room-chat-controls button {
+  width: auto;
+  min-width: 80px;
+}
+
+@media (max-width: 640px) {
+  .chat-form.room-chat-form {
+    gap: 8px;
+    padding: 8px;
+    align-items: flex-end; /* 手机端保持底部对齐以适应堆叠按钮 */
+  }
+  
+  .room-chat-controls {
+    flex-direction: column; /* 手机端垂直堆叠 */
+    gap: 4px;
+  }
+  
+  .room-chat-controls button {
+    height: 32px !important;
+    padding: 0 12px !important;
+    font-size: 0.8rem !important;
+    min-width: 64px;
+  }
+}
+
 /* Analysis Card Content */
 .analysis-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
   align-items: start; /* 强制左右两列从顶部对齐 */
+}
+
+@media (max-width: 640px) {
+  .analysis-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  
+  .analysis-side-head {
+    height: auto;
+    margin-bottom: 4px;
+  }
 }
 
 .analysis-side-section {
@@ -1257,6 +1484,53 @@ a:focus-visible {
   letter-spacing: 0.05em;
 }
 
+/* Mobile Side Content (Drawer Style) */
+.mobile-analysis-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(4px);
+  display: none;
+}
+
+.mobile-analysis-overlay.active {
+  display: block;
+}
+
+.mobile-analysis-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(85vw, 360px);
+  background: var(--card);
+  z-index: 160;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  overflow-y: auto;
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: -10px 0 25px -5px rgba(0, 0, 0, 0.1);
+}
+
+.mobile-analysis-drawer.active {
+  transform: translateX(0);
+}
+
+.drawer-close-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  padding: 8px;
+  background: var(--surface);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
 .score-card {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1295,6 +1569,33 @@ a:focus-visible {
   display: block;
   font-size: 0.75rem;
   margin-bottom: 4px;
+}
+
+/* Responsive Helpers */
+.desktop-only {
+  display: inline-flex;
+}
+
+.mobile-only {
+  display: none;
+}
+
+.mobile-only-flex {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .desktop-only {
+    display: none;
+  }
+  
+  .mobile-only {
+    display: inline;
+  }
+  
+  .mobile-only-flex {
+    display: inline-flex !important;
+  }
 }
 
 /* Scrollbar tweaks */
