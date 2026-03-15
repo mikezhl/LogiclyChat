@@ -48,6 +48,14 @@ type ReleaseTranscriberDispatchOptions = {
 
 const LIVEKIT_AGENT_PARTICIPANT_KIND = 4;
 
+type ManagedDispatchMetadata = {
+  provider?: string;
+  source?: string;
+  roomId?: string;
+};
+
+type ListedDispatch = Awaited<ReturnType<AgentDispatchClient["listDispatch"]>>[number];
+
 function isTwirpCode(error: unknown, code: string) {
   return (
     error instanceof TwirpError &&
@@ -114,6 +122,57 @@ function logDispatch(message: string, payload?: Record<string, unknown>) {
   console.info(`[transcriber-dispatch] ${message}`);
 }
 
+function parseManagedDispatchMetadata(dispatch: ListedDispatch): ManagedDispatchMetadata | null {
+  const rawMetadata = dispatch.metadata?.trim();
+  if (!rawMetadata) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawMetadata) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as ManagedDispatchMetadata;
+  } catch {
+    return null;
+  }
+}
+
+function isUnnamedDispatch(dispatch: ListedDispatch) {
+  return !dispatch.agentName?.trim();
+}
+
+function isManagedTranscriberDispatch(dispatch: ListedDispatch, roomId: string, agentName: string) {
+  if (dispatch.agentName === agentName) {
+    return true;
+  }
+
+  const metadata = parseManagedDispatchMetadata(dispatch);
+  return (
+    metadata?.provider === "transcriber" &&
+    metadata?.source === "jileme" &&
+    metadata?.roomId === roomId
+  );
+}
+
+function summarizeDispatch(dispatch: ListedDispatch) {
+  const metadata = parseManagedDispatchMetadata(dispatch);
+  return {
+    id: dispatch.id || null,
+    agentName: dispatch.agentName || "",
+    room: dispatch.room || null,
+    metadata: metadata ?? (dispatch.metadata?.trim() ? dispatch.metadata : null),
+  };
+}
+
+function hasConnectedAgentParticipant(participant: ParticipantInfo) {
+  return (
+    participant.kind === LIVEKIT_AGENT_PARTICIPANT_KIND &&
+    participant.state !== ParticipantInfo_State.DISCONNECTED
+  );
+}
+
 export async function ensureTranscriberDispatch(
   roomId: string,
   credentials?: LivekitDispatchCredentials,
@@ -141,62 +200,106 @@ export async function ensureTranscriberDispatch(
   await ensureLiveKitRoomExists(roomId, resolvedCredentials);
 
   const dispatchClient = createDispatchClient(resolvedCredentials);
+  const roomClient = createRoomServiceClient(resolvedCredentials);
   const existingDispatches = await dispatchClient.listDispatch(roomId);
+  const participants = await roomClient.listParticipants(roomId);
+  const activeAgentParticipants = participants.filter(hasConnectedAgentParticipant);
+  const managedDispatches = existingDispatches.filter((dispatch) =>
+    isManagedTranscriberDispatch(dispatch, roomId, agentName),
+  );
+  const staleUnnamedDispatches = existingDispatches.filter(
+    (dispatch) => isUnnamedDispatch(dispatch) && !isManagedTranscriberDispatch(dispatch, roomId, agentName),
+  );
+
   logDispatch("Fetched existing dispatches", {
     roomId,
     agentName,
     existingDispatchCount: existingDispatches.length,
-    dispatchAgentNames: existingDispatches.map((dispatch) => dispatch.agentName ?? "(empty)"),
+    dispatches: existingDispatches.map(summarizeDispatch),
+    activeAgentParticipantCount: activeAgentParticipants.length,
+    activeAgentParticipantIdentities: activeAgentParticipants.map((participant) => participant.identity),
   });
-  const alreadyDispatched = existingDispatches.some((dispatch) => dispatch.agentName === agentName);
+  const alreadyDispatched = managedDispatches.length > 0 || activeAgentParticipants.length > 0;
 
-  if (!alreadyDispatched) {
-    try {
-      const createdDispatch = await dispatchClient.createDispatch(roomId, agentName, {
-        metadata: JSON.stringify({
-          provider: "transcriber",
-          source: "jileme",
-          roomId,
-        }),
-      });
-      logDispatch("Created transcriber dispatch", {
+  if (alreadyDispatched) {
+    logDispatch("Dispatch already present or agent already connected", {
+      roomId,
+      agentName,
+      managedDispatchCount: managedDispatches.length,
+      staleUnnamedDispatchCount: staleUnnamedDispatches.length,
+      activeAgentParticipantCount: activeAgentParticipants.length,
+    });
+    return {
+      enabled: true,
+      roomEnsured: true,
+      agentName,
+      existingDispatchCount: existingDispatches.length,
+      alreadyDispatched: true,
+      createdDispatchId: null,
+    };
+  }
+
+  if (staleUnnamedDispatches.length > 0) {
+    let deletedStaleUnnamedDispatchCount = 0;
+    for (const dispatch of staleUnnamedDispatches) {
+      if (!dispatch.id) {
+        continue;
+      }
+
+      try {
+        await dispatchClient.deleteDispatch(dispatch.id, roomId);
+        deletedStaleUnnamedDispatchCount += 1;
+      } catch (error) {
+        if (!isTwirpCode(error, "not_found")) {
+          throw error;
+        }
+      }
+    }
+
+    logDispatch("Deleted stale unnamed dispatches before creating a fresh transcriber dispatch", {
+      roomId,
+      agentName,
+      staleUnnamedDispatchCount: staleUnnamedDispatches.length,
+      deletedStaleUnnamedDispatchCount,
+    });
+  }
+
+  try {
+    const createdDispatch = await dispatchClient.createDispatch(roomId, agentName, {
+      metadata: JSON.stringify({
+        provider: "transcriber",
+        source: "jileme",
         roomId,
-        agentName,
-        dispatchId: createdDispatch.id,
-      });
+      }),
+    });
+    logDispatch("Created transcriber dispatch", {
+      roomId,
+      agentName,
+      dispatchId: createdDispatch.id,
+      dispatch: summarizeDispatch(createdDispatch),
+    });
+    return {
+      enabled: true,
+      roomEnsured: true,
+      agentName,
+      existingDispatchCount: existingDispatches.length,
+      alreadyDispatched: false,
+      createdDispatchId: createdDispatch.id ?? null,
+    };
+  } catch (error) {
+    if (isTwirpCode(error, "already_exists")) {
+      logDispatch("Dispatch already exists (race)", { roomId, agentName });
       return {
         enabled: true,
         roomEnsured: true,
         agentName,
         existingDispatchCount: existingDispatches.length,
-        alreadyDispatched: false,
-        createdDispatchId: createdDispatch.id ?? null,
+        alreadyDispatched: true,
+        createdDispatchId: null,
       };
-    } catch (error) {
-      if (isTwirpCode(error, "already_exists")) {
-        logDispatch("Dispatch already exists (race)", { roomId, agentName });
-        return {
-          enabled: true,
-          roomEnsured: true,
-          agentName,
-          existingDispatchCount: existingDispatches.length,
-          alreadyDispatched: true,
-          createdDispatchId: null,
-        };
-      }
-      throw error;
     }
+    throw error;
   }
-
-  logDispatch("Dispatch already present", { roomId, agentName });
-  return {
-    enabled: true,
-    roomEnsured: true,
-    agentName,
-    existingDispatchCount: existingDispatches.length,
-    alreadyDispatched: true,
-    createdDispatchId: null,
-  };
 }
 
 export async function releaseTranscriberDispatchIfIdle(
@@ -274,7 +377,9 @@ export async function releaseTranscriberDispatchIfIdle(
   }
 
   const existingDispatches = await dispatchClient.listDispatch(roomId);
-  const transcriberDispatches = existingDispatches.filter((dispatch) => dispatch.agentName === agentName);
+  const transcriberDispatches = existingDispatches.filter(
+    (dispatch) => isManagedTranscriberDispatch(dispatch, roomId, agentName) || isUnnamedDispatch(dispatch),
+  );
 
   let deletedDispatchCount = 0;
   for (const dispatch of transcriberDispatches) {
@@ -311,6 +416,7 @@ export async function releaseTranscriberDispatchIfIdle(
     roomId,
     ignoredParticipantIdentity,
     existingDispatchCount: existingDispatches.length,
+    deletedDispatches: transcriberDispatches.map(summarizeDispatch),
     deletedDispatchCount,
     removedAgentCount,
   });

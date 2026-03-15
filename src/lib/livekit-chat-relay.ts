@@ -6,6 +6,12 @@ import {
   encodeLivekitChatMessageEvent,
   LIVEKIT_CHAT_MESSAGE_TOPIC,
 } from "./livekit-chat-event";
+import {
+  createLivekitTranscriptionStatusEvent,
+  encodeLivekitTranscriptionStatusEvent,
+  type LivekitTranscriptionStatus,
+  LIVEKIT_TRANSCRIPTION_STATUS_TOPIC,
+} from "./livekit-transcription-status-event";
 
 export type LivekitRoomServiceCredentials = {
   livekitUrl: string;
@@ -29,5 +35,21 @@ export async function publishChatMessageViaLivekit(
   const packet = encodeLivekitChatMessageEvent(createLivekitChatMessageEvent(roomId, message));
   await roomServiceClient.sendData(roomId, packet, DataPacket_Kind.RELIABLE, {
     topic: LIVEKIT_CHAT_MESSAGE_TOPIC,
+  });
+}
+
+export async function publishTranscriptionStatusViaLivekit(
+  roomServiceClient: RoomServiceClient,
+  roomId: string,
+  participantIdentity: string,
+  status: LivekitTranscriptionStatus,
+  trackSid: string | null,
+  reason?: string | null,
+) {
+  const packet = encodeLivekitTranscriptionStatusEvent(
+    createLivekitTranscriptionStatusEvent(roomId, participantIdentity, status, trackSid, reason),
+  );
+  await roomServiceClient.sendData(roomId, packet, DataPacket_Kind.RELIABLE, {
+    topic: LIVEKIT_TRANSCRIPTION_STATUS_TOPIC,
   });
 }

@@ -33,7 +33,10 @@ import {
   TranscriptAccumulator,
   type TranscribedParticipant,
 } from "@/features/transcription/core/transcript-sink";
-import { createRoomServiceClient } from "@/lib/livekit-chat-relay";
+import {
+  createRoomServiceClient,
+  publishTranscriptionStatusViaLivekit,
+} from "@/lib/livekit-chat-relay";
 import { prisma as sharedPrisma } from "@/lib/prisma";
 import { type KeySource } from "@/lib/provider-sources";
 import { recordVoiceUsageForOwner } from "@/lib/usage-stats";
@@ -48,10 +51,13 @@ type ParticipantTranscriptionSession = {
   roomRefId: string;
   ownerUserId: string | null;
   voiceUsageSource: KeySource;
+  relayRoomServiceClient: RoomServiceClient | null;
   providerSession: RealtimeTranscriptionProviderSession;
   transcriptAccumulator: TranscriptAccumulator;
   speechState: SpeechState;
   speechStartedAtMs: number | null;
+  attachedTrackSid: string | null;
+  hasSpeechActivitySinceAttach: boolean;
   closed: boolean;
   consumeTask: Promise<void>;
 };
@@ -182,6 +188,38 @@ function updateSpeechState(session: ParticipantTranscriptionSession, roomId: str
   });
 }
 
+async function publishParticipantTranscriptionStatus(
+  relayRoomServiceClient: RoomServiceClient | null,
+  roomId: string,
+  participantIdentity: string,
+  status: "attached" | "detached",
+  trackSid: string | null,
+  reason?: string,
+) {
+  if (!relayRoomServiceClient) {
+    return;
+  }
+
+  try {
+    await publishTranscriptionStatusViaLivekit(
+      relayRoomServiceClient,
+      roomId,
+      participantIdentity,
+      status,
+      trackSid,
+      reason,
+    );
+  } catch (error) {
+    logError("Failed to publish transcription status event", error, {
+      roomId,
+      participantIdentity,
+      status,
+      trackSid,
+      reason,
+    });
+  }
+}
+
 function getRemoteParticipantMicrophonePublication(
   participant: RemoteParticipant,
 ): RemoteTrackPublication | null {
@@ -208,9 +246,35 @@ async function clearParticipantAudioInput(
     provider: session.providerSession.runtime.provider,
   });
   updateSpeechState(session, roomId, "listening");
-  await session.providerSession.updateTrack(null, null, reason);
-  if (flush && !session.closed) {
+  const detachedTrackSid = session.attachedTrackSid;
+  if (flush && detachedTrackSid && session.hasSpeechActivitySinceAttach && !session.closed) {
     await session.providerSession.flush().catch(() => undefined);
+  }
+  let detachError: unknown;
+  try {
+    await session.providerSession.updateTrack(null, null, reason);
+  } catch (error) {
+    detachError = error;
+    logError("Failed to detach provider audio track", error, {
+      roomId,
+      participantIdentity: session.participant.identity,
+      reason,
+      provider: session.providerSession.runtime.provider,
+      detachedTrackSid,
+    });
+  }
+  session.attachedTrackSid = null;
+  session.hasSpeechActivitySinceAttach = false;
+  await publishParticipantTranscriptionStatus(
+    session.relayRoomServiceClient,
+    roomId,
+    session.participant.identity,
+    "detached",
+    detachedTrackSid,
+    reason,
+  );
+  if (detachError) {
+    throw detachError;
   }
 }
 
@@ -267,6 +331,16 @@ async function syncParticipantMicrophoneInput({
     publication.sid ?? null,
     "microphone_attached",
   );
+  session.attachedTrackSid = publication.sid ?? null;
+  session.hasSpeechActivitySinceAttach = false;
+  await publishParticipantTranscriptionStatus(
+    session.relayRoomServiceClient,
+    roomId,
+    participant.identity,
+    "attached",
+    session.attachedTrackSid,
+    "microphone_attached",
+  );
   logInfo("Participant microphone track attached to provider session", {
     roomId,
     participantIdentity: participant.identity,
@@ -295,6 +369,7 @@ async function consumeParticipantSpeechStream({
             participantIdentity: session.participant.identity,
             provider: session.providerSession.runtime.provider,
           });
+          session.hasSpeechActivitySinceAttach = true;
           updateSpeechState(session, roomId, "speaking");
           break;
         case "speech_stopped":
@@ -315,6 +390,7 @@ async function consumeParticipantSpeechStream({
             textLength: event.text.length,
             textPreview: previewText(event.text),
           });
+          session.hasSpeechActivitySinceAttach = true;
           session.transcriptAccumulator.handleUpdate({
             transcript: event.text,
             isFinal: event.isFinal,
@@ -351,7 +427,14 @@ async function closeParticipantSession({
   session.closed = true;
   sessionRegistry.delete(session.participant.identity);
 
-  await clearParticipantAudioInput(session, roomId, reason, false);
+  await clearParticipantAudioInput(session, roomId, reason, false).catch((error) => {
+    logError("Failed to clear participant audio input during session close", error, {
+      roomId,
+      participantIdentity: session.participant.identity,
+      provider: session.providerSession.runtime.provider,
+      reason,
+    });
+  });
   await session.providerSession.close().catch((error) => {
     logError("Failed to close provider session", error, {
       roomId,
@@ -360,13 +443,98 @@ async function closeParticipantSession({
     });
   });
   await session.consumeTask.catch(() => undefined);
-  await session.transcriptAccumulator.close();
+  await session.transcriptAccumulator.close().catch((error) => {
+    logError("Failed to close transcript accumulator", error, {
+      roomId,
+      participantIdentity: session.participant.identity,
+    });
+  });
 
   logInfo("Participant transcription session closed", {
     roomId,
     participantIdentity: session.participant.identity,
     reason,
   });
+}
+
+async function syncParticipantMicrophoneInputWithRecovery({
+  session,
+  participant,
+  roomId,
+  sessionRegistry,
+  failureReason,
+}: {
+  session: ParticipantTranscriptionSession;
+  participant: RemoteParticipant;
+  roomId: string;
+  sessionRegistry: Map<string, ParticipantTranscriptionSession>;
+  failureReason: string;
+}) {
+  try {
+    await syncParticipantMicrophoneInput({
+      session,
+      participant,
+      roomId,
+    });
+  } catch (error) {
+    logError("Participant microphone sync failed; closing session for retry", error, {
+      roomId,
+      participantIdentity: participant.identity,
+      provider: session.providerSession.runtime.provider,
+      failureReason,
+    });
+    await closeParticipantSession({
+      session,
+      sessionRegistry,
+      roomId,
+      reason: failureReason,
+    }).catch((closeError) => {
+      logError("Failed to close participant session after microphone sync failure", closeError, {
+        roomId,
+        participantIdentity: participant.identity,
+        provider: session.providerSession.runtime.provider,
+        failureReason,
+      });
+    });
+    throw error;
+  }
+}
+
+async function clearParticipantAudioInputWithRecovery({
+  session,
+  roomId,
+  sessionRegistry,
+  reason,
+}: {
+  session: ParticipantTranscriptionSession;
+  roomId: string;
+  sessionRegistry: Map<string, ParticipantTranscriptionSession>;
+  reason: string;
+}) {
+  try {
+    await clearParticipantAudioInput(session, roomId, reason);
+  } catch (error) {
+    logError("Participant audio input clear failed; closing session for retry", error, {
+      roomId,
+      participantIdentity: session.participant.identity,
+      provider: session.providerSession.runtime.provider,
+      reason,
+    });
+    await closeParticipantSession({
+      session,
+      sessionRegistry,
+      roomId,
+      reason: `${reason}_recovery_close`,
+    }).catch((closeError) => {
+      logError("Failed to close participant session after audio clear failure", closeError, {
+        roomId,
+        participantIdentity: session.participant.identity,
+        provider: session.providerSession.runtime.provider,
+        reason,
+      });
+    });
+    throw error;
+  }
 }
 
 async function startParticipantSession({
@@ -425,6 +593,7 @@ async function startParticipantSession({
     roomRefId,
     ownerUserId,
     voiceUsageSource: roomVoiceRuntime.source,
+    relayRoomServiceClient,
     providerSession,
     transcriptAccumulator: new TranscriptAccumulator(
       prisma,
@@ -435,6 +604,8 @@ async function startParticipantSession({
     ),
     speechState: "listening",
     speechStartedAtMs: null,
+    attachedTrackSid: null,
+    hasSpeechActivitySinceAttach: false,
     closed: false,
     consumeTask: Promise.resolve(),
   };
@@ -455,10 +626,12 @@ async function startParticipantSession({
 
   const remoteParticipant = ctx.room.remoteParticipants.get(participant.identity);
   if (remoteParticipant) {
-    await syncParticipantMicrophoneInput({
+    await syncParticipantMicrophoneInputWithRecovery({
       session,
       participant: remoteParticipant,
       roomId,
+      sessionRegistry,
+      failureReason: "initial_microphone_sync_failed",
     });
   }
 }
@@ -581,10 +754,12 @@ export default defineAgent({
         return;
       }
 
-      await syncParticipantMicrophoneInput({
+      await syncParticipantMicrophoneInputWithRecovery({
         session,
         participant,
         roomId,
+        sessionRegistry: sessions,
+        failureReason: "microphone_sync_failed",
       });
     };
 
@@ -675,7 +850,12 @@ export default defineAgent({
         return;
       }
 
-      void clearParticipantAudioInput(session, roomId, "microphone_unsubscribed").catch((error) => {
+      void clearParticipantAudioInputWithRecovery({
+        session,
+        roomId,
+        sessionRegistry: sessions,
+        reason: "microphone_unsubscribed",
+      }).catch((error) => {
         logError("Failed to detach unsubscribed microphone stream", error, {
           roomId,
           participantIdentity: participant.identity,
@@ -694,10 +874,12 @@ export default defineAgent({
         return;
       }
 
-      void syncParticipantMicrophoneInput({
+      void syncParticipantMicrophoneInputWithRecovery({
         session,
         participant,
         roomId,
+        sessionRegistry: sessions,
+        failureReason: "microphone_unpublish_sync_failed",
       }).catch((error) => {
         logError("Failed to handle microphone unpublish", error, {
           roomId,

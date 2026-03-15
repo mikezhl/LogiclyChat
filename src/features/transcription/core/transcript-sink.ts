@@ -11,6 +11,7 @@ import { publishChatMessageViaLivekit } from "@/lib/livekit-chat-relay";
 import { toChatMessage } from "@/lib/messages";
 
 const TRANSCRIPT_UTTERANCE_GAP_MS = parseNumberEnv(process.env.TRANSCRIPT_UTTERANCE_GAP_MS, 2000);
+const TRANSCRIPT_DUPLICATE_WINDOW_MS = parseNumberEnv(process.env.TRANSCRIPT_DUPLICATE_WINDOW_MS, 750);
 
 export type TranscribedParticipant = {
   identity: string;
@@ -158,6 +159,43 @@ async function upsertTranscriptMessage({
   const content = normalizeTranscriptText(transcript);
   if (!content) {
     return null;
+  }
+
+  const duplicateMessage = await prisma.message.findFirst({
+    where: {
+      roomRefId,
+      type: MessageType.TRANSCRIPT,
+      participantId: participant.identity,
+      content,
+      createdAt: {
+        gte: new Date(windowStartedAt - TRANSCRIPT_DUPLICATE_WINDOW_MS),
+        lte: new Date(windowStartedAt + TRANSCRIPT_DUPLICATE_WINDOW_MS),
+      },
+    },
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
+
+  if (duplicateMessage) {
+    logWarn("Deduplicated near-identical transcript message", {
+      roomRefId,
+      participantIdentity: participant.identity,
+      messageId: duplicateMessage.id,
+      externalRef,
+      duplicateWindowMs: TRANSCRIPT_DUPLICATE_WINDOW_MS,
+      content,
+    });
+    return prisma.message.update({
+      where: {
+        id: duplicateMessage.id,
+      },
+      data: {
+        senderName: normalizeSenderName(participant),
+        participantId: participant.identity,
+        content,
+      },
+    });
   }
 
   return prisma.message.upsert({

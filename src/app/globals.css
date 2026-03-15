@@ -577,6 +577,19 @@ a:focus-visible {
   cursor: not-allowed;
 }
 
+.room-chat-controls button[aria-busy="true"] {
+  position: relative;
+  pointer-events: none;
+  font-size: 0;
+}
+
+.room-chat-controls button[aria-busy="true"]::after {
+  content: attr(data-busy-label);
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
 /* Auth Modal - Flat & Clean */
 .auth-modal-overlay {
   position: fixed;
@@ -1608,11 +1621,40 @@ a:focus-visible {
 .mic-selector-trigger {
   cursor: pointer !important;
   width: 100%;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 6px;
+  text-align: left;
 }
 
 .mic-selector-trigger:hover {
   filter: brightness(0.95);
+}
+
+.mic-selector-label {
+  grid-column: 1 / 2;
+  grid-row: 1;
+}
+
+.mic-selector-content {
+  grid-column: 1 / 2;
+  grid-row: 2;
+  min-width: 0;
+}
+
+.mic-selector-content > .provider-chip-label {
+  display: none;
+}
+
+.mic-selector-value {
+  display: block;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 麦克风图标：音量呼吸光晕 */
@@ -1627,6 +1669,12 @@ a:focus-visible {
   color: var(--muted);
   position: relative;
   transition: color 0.2s;
+}
+
+.mic-selector-trigger .mic-vol-icon {
+  grid-column: 2 / 3;
+  grid-row: 1 / span 2;
+  justify-self: end;
 }
 
 .mic-vol-icon::before {

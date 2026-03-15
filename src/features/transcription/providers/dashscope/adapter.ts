@@ -24,6 +24,7 @@ type DashScopeRealtimeMessage = {
 const AUDIO_APPEND_LOG_INTERVAL = 100;
 const RAW_MESSAGE_PREVIEW_LIMIT = 800;
 const TEXT_PREVIEW_LIMIT = 120;
+const SESSION_READY_TIMEOUT_MS = 8 * 1000;
 const SESSION_FINISH_WAIT_TIMEOUT_MS = 1500;
 
 function getDashScopeRegionHint(baseUrl: string) {
@@ -99,6 +100,7 @@ class DashScopeRealtimeSession implements RealtimeTranscriptionProviderSession {
   private readonly readyPromise: Promise<void>;
   private readyResolve: (() => void) | null = null;
   private readyReject: ((error: Error) => void) | null = null;
+  private readyTimeoutId: NodeJS.Timeout | null = null;
   private finishAckPromise: Promise<void>;
   private finishAckResolve: (() => void) | null = null;
   private audioStream: AudioStream | null = null;
@@ -106,8 +108,9 @@ class DashScopeRealtimeSession implements RealtimeTranscriptionProviderSession {
   private consumeAudioTask: Promise<void> | null = null;
   private closed = false;
   private open = false;
-  private sessionUpdated = false;
+  private sessionUpdateRequested = false;
   private sessionCreated = false;
+  private sessionReady = false;
   private sessionFinished = false;
   private readonly seenMessageTypes = new Set<string>();
 
@@ -121,6 +124,13 @@ class DashScopeRealtimeSession implements RealtimeTranscriptionProviderSession {
       this.readyResolve = resolve;
       this.readyReject = reject;
     });
+    this.readyTimeoutId = setTimeout(() => {
+      const error = new Error(`DashScope session did not become ready within ${SESSION_READY_TIMEOUT_MS}ms`);
+      this.rejectReady(error);
+      if (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING) {
+        this.socket.close(1011, "session ready timeout");
+      }
+    }, SESSION_READY_TIMEOUT_MS);
     this.finishAckPromise = new Promise<void>((resolve) => {
       this.finishAckResolve = resolve;
     });
@@ -133,19 +143,42 @@ class DashScopeRealtimeSession implements RealtimeTranscriptionProviderSession {
     this.bindSocketEvents();
   }
 
+  private resolveReady() {
+    if (this.sessionReady) {
+      return;
+    }
+
+    this.sessionReady = true;
+    if (this.readyTimeoutId) {
+      clearTimeout(this.readyTimeoutId);
+      this.readyTimeoutId = null;
+    }
+    this.readyResolve?.();
+    this.readyResolve = null;
+    this.readyReject = null;
+  }
+
+  private rejectReady(error: Error) {
+    if (!this.readyResolve && !this.readyReject) {
+      return;
+    }
+
+    if (this.readyTimeoutId) {
+      clearTimeout(this.readyTimeoutId);
+      this.readyTimeoutId = null;
+    }
+    this.readyReject?.(error);
+    this.readyResolve = null;
+    this.readyReject = null;
+  }
+
   private bindSocketEvents() {
     this.socket.on("open", () => {
       this.open = true;
       console.info("[transcriber] DashScope websocket opened", buildDashScopeLogPayload(this.runtime, {
         url: this.url,
       }));
-      try {
-        this.sendSessionUpdate();
-        this.readyResolve?.();
-      } finally {
-        this.readyResolve = null;
-        this.readyReject = null;
-      }
+      this.sendSessionUpdate();
     });
 
     this.socket.on("message", (raw) => {
@@ -175,6 +208,7 @@ class DashScopeRealtimeSession implements RealtimeTranscriptionProviderSession {
           }));
           break;
         case "session.updated":
+          this.resolveReady();
           console.info("[transcriber] DashScope session updated", buildDashScopeLogPayload(this.runtime, {
             url: this.url,
             eventId: message.event_id ?? null,
@@ -256,6 +290,9 @@ class DashScopeRealtimeSession implements RealtimeTranscriptionProviderSession {
             eventId: message.event_id ?? null,
             payloadPreview: previewPayload(message),
           }));
+          if (!this.sessionReady) {
+            this.rejectReady(new Error(`DashScope session failed before ready: ${previewPayload(message)}`));
+          }
           break;
         default:
           if (firstSeen) {
@@ -277,11 +314,9 @@ class DashScopeRealtimeSession implements RealtimeTranscriptionProviderSession {
         }),
         error: error instanceof Error ? error.message : error,
       });
-      if (!this.open) {
+      if (!this.sessionReady) {
         const failure = error instanceof Error ? error : new Error(String(error));
-        this.readyReject?.(failure);
-        this.readyResolve = null;
-        this.readyReject = null;
+        this.rejectReady(failure);
       }
     });
 
@@ -300,10 +335,8 @@ class DashScopeRealtimeSession implements RealtimeTranscriptionProviderSession {
             ? `Unexpected websocket close. If this happens during connect, verify DASHSCOPE_REALTIME_URL (${this.runtime.baseUrl}) against the API key region.`
             : undefined,
       }));
-      if (!this.closed && this.readyReject) {
-        this.readyReject(new Error(`DashScope websocket closed before ready (${code}:${reason.toString()})`));
-        this.readyResolve = null;
-        this.readyReject = null;
+      if (!this.closed && !this.sessionReady) {
+        this.rejectReady(new Error(`DashScope websocket closed before ready (${code}:${reason.toString()})`));
       }
       this.eventQueue.close();
     });
@@ -326,10 +359,10 @@ class DashScopeRealtimeSession implements RealtimeTranscriptionProviderSession {
   }
 
   private sendSessionUpdate() {
-    if (this.sessionUpdated) {
+    if (this.sessionUpdateRequested) {
       return;
     }
-    this.sessionUpdated = true;
+    this.sessionUpdateRequested = true;
     const payload = {
       event_id: `session_${Date.now()}`,
       type: "session.update",
@@ -505,11 +538,15 @@ class DashScopeRealtimeSession implements RealtimeTranscriptionProviderSession {
       url: this.url,
       trackSid: this.trackSid,
       sessionCreated: this.sessionCreated,
-      sessionUpdated: this.sessionUpdated,
+      sessionUpdateRequested: this.sessionUpdateRequested,
+      sessionReady: this.sessionReady,
       sessionFinished: this.sessionFinished,
       socketReadyState: this.socket.readyState,
       open: this.open,
     }));
+    if (!this.sessionReady) {
+      this.rejectReady(new Error("DashScope session closed before becoming ready"));
+    }
     await this.updateTrack(null, null, "provider_close").catch(() => undefined);
     await this.flush().catch(() => undefined);
     const payload = {

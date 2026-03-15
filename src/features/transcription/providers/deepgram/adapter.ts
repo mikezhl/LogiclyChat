@@ -129,11 +129,10 @@ class DeepgramRealtimeSession implements RealtimeTranscriptionProviderSession {
   }
 
   async flush() {
-    try {
-      this.speechStream.flush();
-    } catch {
-      // ignore flush races
-    }
+    // Deepgram VAD/endpointing already finalizes utterances on its own.
+    // The current LiveKit plugin may emit a zero-sample frame on flush,
+    // which breaks the stream and forces a costly reconnect loop.
+    return;
   }
 
   async close() {
