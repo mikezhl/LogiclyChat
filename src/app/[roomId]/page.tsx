@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import RoomPageClient from "@/components/room-page-client";
+import RoomPageClient from "@/components/room-page/room-page";
 import { getCurrentUser } from "@/lib/auth";
 import { findAccessibleRoom } from "@/lib/rooms";
 import { normalizeRoomId } from "@/lib/room-utils";
