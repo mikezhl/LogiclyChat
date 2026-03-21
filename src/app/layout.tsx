@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import DocumentTitleSync from "@/components/document-title-sync";
@@ -24,6 +24,13 @@ export const metadata: Metadata = {
     icon: [{ url: "/favicon-ji.svg", type: "image/svg+xml" }],
     shortcut: "/favicon-ji.svg",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({

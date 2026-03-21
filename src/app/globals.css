@@ -796,10 +796,16 @@ a:focus-visible {
 /* Room Page */
 .room-page {
   height: 100vh;
+  height: 100svh;
+  min-height: 100vh;
+  min-height: 100svh;
+  max-height: 100vh;
+  max-height: 100svh;
   background: var(--background);
   display: flex;
   flex-direction: row;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 .room-sidebar {
@@ -808,9 +814,11 @@ a:focus-visible {
   background: var(--card);
   display: flex;
   flex-direction: column;
+  min-height: 0;
   padding: 24px;
   gap: 24px;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
 }
 
 @media (max-width: 1100px) {
@@ -823,7 +831,7 @@ a:focus-visible {
   }
   
   .room-shell {
-    padding: 16px 0;
+    padding: max(16px, env(safe-area-inset-top)) 0 max(12px, env(safe-area-inset-bottom));
   }
 
   .room-header {
@@ -869,14 +877,16 @@ a:focus-visible {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0;
   max-height: 100%;
-  padding: 24px 0; /* Remove horizontal padding to let scrollbar reach the edge */
+  padding: calc(24px + env(safe-area-inset-top)) 0 calc(24px + env(safe-area-inset-bottom));
   overflow: hidden;
 }
 
 .room-shell-chat {
   background: transparent;
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -884,6 +894,7 @@ a:focus-visible {
 }
 
 .room-header {
+  flex: none;
   width: 100%;
   padding: 0 24px 20px;
   display: grid;
@@ -1421,12 +1432,16 @@ a:focus-visible {
   display: flex;
   flex-direction: column;
   width: 100%;
+  overflow: hidden;
 }
 
 .chat-scroll {
   flex: 1;
+  min-height: 0;
   padding: 12px 0;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -1532,6 +1547,7 @@ a:focus-visible {
 }
 
 .chat-form.room-chat-form {
+  flex: none;
   margin: 16px auto 0;
   display: flex;
   gap: 12px;
