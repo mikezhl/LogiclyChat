@@ -250,6 +250,16 @@ export default function DashboardPageClient({
         "A real-time AI debate and argument copilot for assist, analysis, and summaries.",
       );
   const providerMap = new Map((transcriptionStatus?.providers ?? []).map((item) => [item.provider, item]));
+  const manualInputProps = {
+    autoComplete: "off",
+    autoCapitalize: "none" as const,
+    spellCheck: false,
+  };
+  const manualSecretInputProps = {
+    autoComplete: "new-password",
+    autoCapitalize: "none" as const,
+    spellCheck: false,
+  };
 
   function toggleLanguage() {
     setLanguage(isZh ? "en" : "zh");
@@ -948,8 +958,12 @@ export default function DashboardPageClient({
                       {livekitStatus?.livekitApiSecretMask ?? t("未配置", "Not configured")}
                     </span>
                   </div>
-                  <form className="key-form" onSubmit={saveLivekit}>
+                  <form className="key-form" onSubmit={saveLivekit} autoComplete="off">
                     <input
+                      {...manualInputProps}
+                      type="url"
+                      inputMode="url"
+                      name="livekit-url"
                       value={livekitForm.livekitUrl}
                       onChange={(event) =>
                         setLivekitForm((current) => ({ ...current, livekitUrl: event.target.value }))
@@ -957,6 +971,8 @@ export default function DashboardPageClient({
                       placeholder={t("LIVEKIT_URL（必填）", "LIVEKIT_URL (required)")}
                     />
                     <input
+                      {...manualInputProps}
+                      name="livekit-api-key"
                       value={livekitForm.livekitApiKey}
                       onChange={(event) =>
                         setLivekitForm((current) => ({
@@ -967,7 +983,9 @@ export default function DashboardPageClient({
                       placeholder="LIVEKIT_API_KEY"
                     />
                     <input
+                      {...manualSecretInputProps}
                       type="password"
+                      name="livekit-api-secret"
                       value={livekitForm.livekitApiSecret}
                       onChange={(event) =>
                         setLivekitForm((current) => ({
@@ -1080,10 +1098,15 @@ export default function DashboardPageClient({
                             </p>
                           ) : null}
                         </div>
-                        <form className="key-form" onSubmit={(event) => void saveTranscription(event, provider)}>
+                        <form
+                          className="key-form"
+                          onSubmit={(event) => void saveTranscription(event, provider)}
+                          autoComplete="off"
+                        >
                           <input
+                            {...manualSecretInputProps}
                             type="password"
-                            autoComplete="new-password"
+                            name={`${provider}-api-key`}
                             value={transcriptionForm[provider]}
                             onChange={(event) =>
                               setTranscriptionForm((current) => ({
@@ -1167,8 +1190,12 @@ export default function DashboardPageClient({
                     <span>LLM API Key: {llmKeyStatus?.apiKeyMask ?? t("未配置", "Not configured")}</span>
                     <span>LLM Model: {llmKeyStatus?.model ?? t("未配置", "Not configured")}</span>
                   </div>
-                  <form className="key-form" onSubmit={saveLlm}>
+                  <form className="key-form" onSubmit={saveLlm} autoComplete="off">
                     <input
+                      {...manualInputProps}
+                      type="url"
+                      inputMode="url"
+                      name="conversation-llm-base-url"
                       value={llmForm.baseUrl}
                       onChange={(event) => setLlmForm((current) => ({ ...current, baseUrl: event.target.value }))}
                       placeholder={t(
@@ -1177,12 +1204,16 @@ export default function DashboardPageClient({
                       )}
                     />
                     <input
+                      {...manualSecretInputProps}
                       type="password"
+                      name="conversation-llm-api-key"
                       value={llmForm.apiKey}
                       onChange={(event) => setLlmForm((current) => ({ ...current, apiKey: event.target.value }))}
                       placeholder="CONVERSATION_LLM_OPENAI_API_KEY"
                     />
                     <input
+                      {...manualInputProps}
+                      name="conversation-llm-model"
                       value={llmForm.model}
                       onChange={(event) => setLlmForm((current) => ({ ...current, model: event.target.value }))}
                       placeholder="CONVERSATION_LLM_OPENAI_MODEL"
