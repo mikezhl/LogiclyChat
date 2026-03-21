@@ -1,4 +1,4 @@
-import DashboardPageClient from "@/components/dashboard-page-client";
+import DashboardPageClient from "@/components/dashboard-page/dashboard-page";
 import { getCurrentUser } from "@/lib/auth";
 import { getUserTranscriptionSettingsStatus } from "@/features/transcription/core/user-settings";
 import { getUserProviderKeysMode } from "@/lib/env";
