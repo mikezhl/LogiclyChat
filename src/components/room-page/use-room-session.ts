@@ -88,6 +88,7 @@ export function useRoomSession({
   const [transcriptionState, setTranscriptionState] = useState<TranscriptionState>("idle");
   const [voiceCallStarting, setVoiceCallStarting] = useState(false);
   const [hasAutoConnectAttempted, setHasAutoConnectAttempted] = useState(false);
+  const [hasLoadedRoomMeta, setHasLoadedRoomMeta] = useState(false);
 
   const upsertMessages = useCallback((incoming: ChatMessage[]) => {
     if (incoming.length === 0) {
@@ -378,6 +379,7 @@ export function useRoomSession({
       providers: payload.providers,
       features: payload.features,
     });
+    setHasLoadedRoomMeta(true);
   }, [roomId, t]);
 
   const fetchMessages = useCallback(
@@ -1022,6 +1024,7 @@ export function useRoomSession({
 
   useEffect(() => {
     setHasAutoConnectAttempted(false);
+    setHasLoadedRoomMeta(false);
     latestMessageCreatedAtRef.current = null;
     setMessages([]);
     setRoomError("");
@@ -1136,6 +1139,9 @@ export function useRoomSession({
   ]);
 
   useEffect(() => {
+    if (!hasLoadedRoomMeta) {
+      return;
+    }
     if (roomMeta.status === "ENDED" || roomMeta.isCreator || roomMeta.ownerPresence.active) {
       return;
     }
@@ -1150,6 +1156,7 @@ export function useRoomSession({
   }, [
     connectionState,
     disconnectRoom,
+    hasLoadedRoomMeta,
     language,
     releaseVoiceRuntimeIfIdle,
     roomMeta.isCreator,
