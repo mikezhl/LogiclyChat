@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth-guard";
 import { isRoomSpeakerSwitchEnabled } from "@/lib/env";
+import { getRoomParticipationSnapshot } from "@/lib/room-members";
 import { getRoomOwnerPresence, touchRoomParticipantHeartbeat } from "@/lib/room-presence";
 import { RoomAccessError, buildRoomRuntimeInfo } from "@/lib/rooms";
 import { normalizeRoomId } from "@/lib/room-utils";
@@ -29,6 +30,11 @@ export async function GET(_request: Request, context: RouteContext) {
 
     const runtimeInfo = await buildRoomRuntimeInfo(roomId, user.id);
     await touchRoomParticipantHeartbeat(runtimeInfo.room.id, user.id);
+    const participation = await getRoomParticipationSnapshot(
+      runtimeInfo.room.id,
+      runtimeInfo.room.createdById,
+      user.id,
+    );
     const ownerPresence = await getRoomOwnerPresence(
       runtimeInfo.room.id,
       runtimeInfo.room.createdById,
@@ -50,6 +56,17 @@ export async function GET(_request: Request, context: RouteContext) {
           lastSeenAt: ownerPresence.lastSeenAt?.toISOString() ?? null,
           timeoutMs: ownerPresence.timeoutMs,
         },
+        currentUserCanParticipate: participation.canParticipate,
+        members: participation.members.map((member) => ({
+          userId: member.userId,
+          username: member.username,
+          joinedAt: member.joinedAt.toISOString(),
+          lastSeenAt: member.lastSeenAt?.toISOString() ?? null,
+          isOwner: member.isOwner,
+          isOnline: member.isOnline,
+          debateSlot: member.debateSlot,
+          canParticipate: member.canParticipate,
+        })),
       },
       providers: runtimeInfo.providers,
       features: {

@@ -11,6 +11,7 @@ import { ensureConversationAnalysisWorker } from "@/features/analysis/runtime/wo
 import { requireApiUser } from "@/lib/auth-guard";
 import { isRoomSpeakerSwitchEnabled } from "@/lib/env";
 import { toChatMessage } from "@/lib/messages";
+import { assertRoomUserCanParticipate } from "@/lib/room-members";
 import { prisma } from "@/lib/prisma";
 import { assertRoomOwnerActiveOrThrow } from "@/lib/room-presence";
 import { RoomAccessError, assertRoomNotEnded, getAccessibleRoomOrThrow } from "@/lib/rooms";
@@ -75,6 +76,7 @@ export async function POST(request: Request, context: RouteContext) {
     const room = await getAccessibleRoomOrThrow(roomId, user.id);
     assertRoomNotEnded(room.status);
     await assertRoomOwnerActiveOrThrow(room, user.id);
+    await assertRoomUserCanParticipate(room.id, room.createdById, user.id);
     if (speakerMode === "bot" && !isRoomSpeakerSwitchEnabled()) {
       return NextResponse.json({ error: "room speaker switch is disabled" }, { status: 403 });
     }

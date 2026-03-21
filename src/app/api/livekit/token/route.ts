@@ -13,6 +13,7 @@ import { ensureTranscriberWorker } from "@/features/transcription/runtime/worker
 import { requireApiUser } from "@/lib/auth-guard";
 import { isRoomSpeakerSwitchEnabled } from "@/lib/env";
 import { resolveConversationLlmRuntimeForOwner } from "@/lib/llm-provider-keys";
+import { getRoomParticipationSnapshot } from "@/lib/room-members";
 import { buildRoomProviderModules } from "@/lib/provider-modules";
 import { prisma } from "@/lib/prisma";
 import { assertRoomOwnerActiveOrThrow } from "@/lib/room-presence";
@@ -54,6 +55,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "room has ended and voice is unavailable" }, { status: 403 });
     }
     await assertRoomOwnerActiveOrThrow(room, user.id);
+    const participation = await getRoomParticipationSnapshot(room.id, room.createdById, user.id);
+    if (isVoiceMode && !participation.canParticipate) {
+      return NextResponse.json(
+        { error: "only the first two room members can join voice; later members are read-only" },
+        { status: 403 },
+      );
+    }
 
     const owner = room.createdById
       ? await prisma.user.findUnique({
@@ -71,6 +79,7 @@ export async function POST(request: Request) {
       userId: user.id,
       connectionMode,
       speakerMode,
+      canParticipate: participation.canParticipate,
       roomVoiceReady: voiceRuntime.ready,
       roomVoiceSource: voiceRuntime.source,
       transcriberEnabled: voiceRuntime.transcriberEnabled,
@@ -183,9 +192,9 @@ export async function POST(request: Request) {
     accessToken.addGrant({
       roomJoin: true,
       room: roomId,
-      canPublish: true,
+      canPublish: participation.canParticipate,
       canSubscribe: true,
-      canPublishData: true,
+      canPublishData: participation.canParticipate,
     });
 
     const token = await accessToken.toJwt();

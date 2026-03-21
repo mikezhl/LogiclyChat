@@ -965,8 +965,246 @@ a:focus-visible {
   font-size: 0.85rem;
   display: flex;
   gap: 10px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.room-meta-divider {
+  flex: none;
+  opacity: 0.4;
+}
+
+.room-members-mobile,
+.room-members-mobile-wrap {
+  display: none;
+}
+
+.room-members-inline {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.room-members-inline::-webkit-scrollbar {
+  display: none;
+}
+
+.room-member-inline {
+  flex: none;
+  min-width: 0;
+  max-width: 170px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.room-member-inline.offline {
+  opacity: 0.72;
+}
+
+.room-member-inline-role {
+  flex: none;
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--foreground);
+}
+
+.room-member-inline-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.room-member-inline-status {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.room-member-inline-status.online {
+  color: #16a34a;
+}
+
+.room-member-inline-status.offline {
+  color: #94a3b8;
+}
+
+.room-member-inline-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.room-members-mobile-owner {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--foreground);
+}
+
+.room-members-mobile-owner.offline {
+  opacity: 0.72;
+}
+
+.room-members-mobile-owner-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.room-members-mobile-trigger {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 0;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.room-members-mobile-trigger:hover,
+.room-members-mobile-trigger[aria-expanded="true"] {
+  color: var(--foreground);
+}
+
+.room-members-mobile-wrap {
+  position: relative;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: visible;
+}
+
+.room-members-flyout {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 130;
+  width: min(320px, calc(100vw - 32px));
+}
+
+.room-members-flyout-panel {
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--card) 92%, white 8%);
+  border-radius: 16px;
+  box-shadow: 0 14px 32px -22px rgba(15, 23, 42, 0.42);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.room-members-flyout-head {
+  display: grid;
+  gap: 4px;
+}
+
+.room-members-flyout-title {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--foreground);
+}
+
+.room-members-flyout-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.73rem;
+  line-height: 1.45;
+}
+
+.room-members-flyout-list {
+  display: grid;
+  gap: 8px;
+}
+
+.room-members-flyout-row {
+  display: flex;
+}
+
+.room-members-flyout-row .room-member-inline {
+  max-width: 100%;
+}
+
+@media (max-width: 600px) {
+  .room-meta-row {
+    gap: 8px;
+    overflow: visible;
+  }
+
+  .room-members-desktop,
+  .room-members-inline {
+    display: none;
+  }
+
+  .room-members-mobile,
+  .room-members-mobile-wrap {
+    display: inline-flex;
+  }
+
+  .room-members-mobile-wrap {
+    flex: none;
+  }
+
+  .room-members-mobile-owner {
+    flex: none;
+    max-width: min(42vw, 180px);
+  }
+
+  .room-member-inline {
+    max-width: 132px;
+    padding: 2px 7px;
+  }
+
+  .room-member-inline-role {
+    font-size: 0.64rem;
+  }
+
+  .room-member-inline-name {
+    font-size: 0.74rem;
+  }
+
+  .room-members-mobile-owner-name,
+  .room-members-mobile-trigger {
+    font-size: 0.74rem;
+  }
+
+  .room-members-mobile-wrap {
+    gap: 7px;
+  }
+
+  .room-members-flyout {
+    width: min(300px, calc(100vw - 28px));
+  }
+
+  .room-members-flyout-panel {
+    padding: 12px 12px 10px;
+    border-radius: 14px;
+  }
 }
 
 .room-actions {

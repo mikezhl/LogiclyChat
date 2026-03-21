@@ -15,6 +15,7 @@ import {
   findLatestRoomNameFromMessages,
   getIdleTranscriptionState,
   getOwnerOfflineError,
+  getRoomParticipationBlockedError,
   getPublishedMicrophoneTrackSid,
   hasConnectedTranscriberParticipant,
   hasPublishedMicrophoneTrack,
@@ -376,6 +377,8 @@ export function useRoomSession({
       endedAt: payload.room.endedAt,
       isCreator: payload.room.isCreator,
       ownerPresence: payload.room.ownerPresence,
+      currentUserCanParticipate: payload.room.currentUserCanParticipate,
+      members: payload.room.members,
       providers: payload.providers,
       features: payload.features,
     });
@@ -698,6 +701,10 @@ export function useRoomSession({
   const startVoiceCall = useCallback(async () => {
     const activeRoom = roomRef.current;
     const ownerActive = roomMeta.isCreator || roomMeta.ownerPresence.active;
+    if (!roomMeta.currentUserCanParticipate) {
+      setRoomError(getRoomParticipationBlockedError(language));
+      return;
+    }
     if (
       !activeRoom ||
       connectionState !== "connected" ||
@@ -798,10 +805,12 @@ export function useRoomSession({
     prepareMicrophoneForCallRef,
     releaseVoiceRuntimeIfIdle,
     resetTranscriptionAttachmentState,
+    roomMeta.currentUserCanParticipate,
     roomMeta.isCreator,
     roomMeta.ownerPresence.active,
     roomMeta.status,
     syncVoiceSessionState,
+    language,
     t,
     transcriptionState,
     waitForParticipantTranscriptionAttachment,
@@ -840,6 +849,7 @@ export function useRoomSession({
 
   const switchSpeakerMode = useCallback(async () => {
     if (
+      !roomMeta.currentUserCanParticipate ||
       !roomMeta.features.speakerSwitchEnabled ||
       speakerSwitchPending ||
       roomMeta.status === "ENDED"
@@ -881,6 +891,7 @@ export function useRoomSession({
     disconnectRoom,
     releaseVoiceRuntimeIfIdle,
     resetTranscriptionAttachmentState,
+    roomMeta.currentUserCanParticipate,
     roomMeta.features.speakerSwitchEnabled,
     roomMeta.status,
     speakerSwitchPending,
@@ -979,6 +990,10 @@ export function useRoomSession({
         }
         return false;
       }
+      if (!roomMeta.currentUserCanParticipate) {
+        setRoomError(getRoomParticipationBlockedError(language));
+        return false;
+      }
 
       const content = rawContent.trim();
       if (!content) {
@@ -1014,6 +1029,7 @@ export function useRoomSession({
       armConnectionIdleTimer,
       language,
       roomId,
+      roomMeta.currentUserCanParticipate,
       roomMeta.isCreator,
       roomMeta.ownerPresence.active,
       roomMeta.status,
@@ -1214,6 +1230,9 @@ export function useRoomSession({
     if (roomMeta.status === "ENDED") {
       return;
     }
+    if (!roomMeta.currentUserCanParticipate) {
+      return;
+    }
     if (!roomMeta.isCreator && !roomMeta.ownerPresence.active) {
       return;
     }
@@ -1222,7 +1241,13 @@ export function useRoomSession({
     void fetch(`/api/rooms/${encodeURIComponent(roomId)}/warmup`, {
       method: "POST",
     }).catch(() => undefined);
-  }, [roomId, roomMeta.isCreator, roomMeta.ownerPresence.active, roomMeta.status]);
+  }, [
+    roomId,
+    roomMeta.currentUserCanParticipate,
+    roomMeta.isCreator,
+    roomMeta.ownerPresence.active,
+    roomMeta.status,
+  ]);
 
   return {
     analysisTogglePending,

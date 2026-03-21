@@ -7,6 +7,7 @@ import {
   type RefObject,
   useEffect,
   useRef,
+  useState,
 } from "react";
 
 import { type RoomSpeakerMode } from "@/lib/room-speaker";
@@ -37,13 +38,15 @@ type RoomPageViewProps = {
   analysisViewState: AnalysisViewState;
   audioContainerRef: RefObject<HTMLDivElement | null>;
   callButtonClassName: string;
+  canConnectRoom: boolean;
   canLeaveVoiceCall: boolean;
+  canParticipate: boolean;
   chatInput: string;
   chatInputRef: RefObject<HTMLTextAreaElement | null>;
   connectionState: RoomConnectionState;
   copied: boolean;
-  currentSpeakerName: string;
   endingRoom: boolean;
+  isAudienceReadOnly: boolean;
   isCreator: boolean;
   isEnded: boolean;
   isInitialConnectionPending: boolean;
@@ -97,7 +100,6 @@ type RoomPageViewProps = {
   sendingText: boolean;
   showEndRoomConfirm: boolean;
   showMobileAnalysis: boolean;
-  showSpeakerIdentity: boolean;
   showSwitchConfirm: boolean;
   speakerMode: RoomSpeakerMode;
   speakerSwitchEnabled: boolean;
@@ -223,6 +225,251 @@ function AnalysisMessage({
       </div>
     );
   }
+}
+
+function getRoomMemberRoleLabel(
+  member: RoomMetaState["members"][number],
+  t: RoomPageTranslate,
+) {
+  if (member.isOwner) {
+    if (member.debateSlot === "A") {
+      return t("房主·辩手A", "Host Debater A");
+    }
+    if (member.debateSlot === "B") {
+      return t("房主·辩手B", "Host Debater B");
+    }
+    return t("房主", "Host");
+  }
+
+  if (member.debateSlot === "A") {
+    return t("辩手A", "Debater A");
+  }
+  if (member.debateSlot === "B") {
+    return t("辩手B", "Debater B");
+  }
+
+  return t("旁听", "Observer");
+}
+
+function getRoomMemberStatusLabel(
+  member: RoomMetaState["members"][number],
+  t: RoomPageTranslate,
+) {
+  return member.isOnline ? t("在线", "Online") : t("离线", "Offline");
+}
+
+function RoomMembersSummary({
+  roomMeta,
+  t,
+}: Pick<RoomPageViewProps, "roomMeta" | "t">) {
+  const [showMobileMembers, setShowMobileMembers] = useState(false);
+  const [mobileMembersFlyoutShift, setMobileMembersFlyoutShift] = useState(0);
+  const mobileMembersRef = useRef<HTMLDivElement | null>(null);
+  const mobileMembersFlyoutRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!showMobileMembers) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (mobileMembersRef.current?.contains(target)) {
+        return;
+      }
+
+      setMobileMembersFlyoutShift(0);
+      setShowMobileMembers(false);
+    };
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileMembersFlyoutShift(0);
+        setShowMobileMembers(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showMobileMembers]);
+
+  useEffect(() => {
+    if (!showMobileMembers) {
+      return;
+    }
+
+    const viewportPadding = 14;
+    let frameId = 0;
+
+    const updateFlyoutPosition = () => {
+      const flyoutElement = mobileMembersFlyoutRef.current;
+      if (!flyoutElement) {
+        return;
+      }
+
+      const rect = flyoutElement.getBoundingClientRect();
+      let nextShift = 0;
+
+      if (rect.left < viewportPadding) {
+        nextShift += viewportPadding - rect.left;
+      }
+
+      if (rect.right > window.innerWidth - viewportPadding) {
+        nextShift -= rect.right - (window.innerWidth - viewportPadding);
+      }
+
+      setMobileMembersFlyoutShift((current) =>
+        Math.abs(current - nextShift) < 1 ? current : nextShift,
+      );
+    };
+
+    frameId = window.requestAnimationFrame(updateFlyoutPosition);
+    window.addEventListener("resize", updateFlyoutPosition);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener("resize", updateFlyoutPosition);
+    };
+  }, [showMobileMembers, roomMeta.members.length]);
+
+  if (roomMeta.members.length === 0) {
+    return null;
+  }
+
+  const ownerMember = roomMeta.members.find((member) => member.isOwner) ?? roomMeta.members[0];
+  const ownerStatusLabel = getRoomMemberStatusLabel(ownerMember, t);
+  const mobileMembersPanelId = "room-members-mobile-panel";
+  const mobileMembersFlyoutStyle =
+    mobileMembersFlyoutShift === 0
+      ? undefined
+      : ({ transform: `translateX(${mobileMembersFlyoutShift}px)` } satisfies CSSProperties);
+
+  return (
+    <>
+      <span className="room-meta-divider room-members-desktop" aria-hidden="true">
+        |
+      </span>
+      <div className="room-members-inline room-members-desktop" aria-label={t("房间成员", "Room members")}>
+        {roomMeta.members.map((member) => {
+          const roleLabel = getRoomMemberRoleLabel(member, t);
+          const statusLabel = getRoomMemberStatusLabel(member, t);
+
+          return (
+            <span
+              key={member.userId}
+              className={`room-member-inline ${member.isOnline ? "online" : "offline"}`}
+              title={`${roleLabel} | @${member.username} | ${statusLabel}`}
+            >
+              <span className="room-member-inline-role">{roleLabel}</span>
+              <span className="room-member-inline-name">@{member.username}</span>
+              <span
+                className={`room-member-inline-status ${member.isOnline ? "online" : "offline"}`}
+                aria-label={statusLabel}
+              >
+                <span className="room-member-inline-dot" aria-hidden="true" />
+              </span>
+            </span>
+          );
+        })}
+      </div>
+      <span className="room-meta-divider room-members-mobile" aria-hidden="true">
+        |
+      </span>
+      <div ref={mobileMembersRef} className="room-members-mobile-wrap">
+        <span
+          className={`room-members-mobile-owner ${ownerMember.isOnline ? "online" : "offline"}`}
+          title={`${ownerMember.username} | ${ownerStatusLabel}`}
+        >
+          <span className="room-members-mobile-owner-name">{ownerMember.username}</span>
+          <span
+            className={`room-member-inline-status ${ownerMember.isOnline ? "online" : "offline"}`}
+            aria-label={ownerStatusLabel}
+          >
+            <span className="room-member-inline-dot" aria-hidden="true" />
+          </span>
+        </span>
+
+        {roomMeta.members.length > 1 ? (
+          <button
+            type="button"
+            className="room-members-mobile-trigger"
+            aria-controls={mobileMembersPanelId}
+            aria-expanded={showMobileMembers}
+            aria-haspopup="dialog"
+            onClick={() => {
+              if (showMobileMembers) {
+                setMobileMembersFlyoutShift(0);
+                setShowMobileMembers(false);
+                return;
+              }
+
+              setShowMobileMembers(true);
+            }}
+          >
+            {t("查看列表", "View list")}
+          </button>
+        ) : null}
+        {showMobileMembers ? (
+          <div
+            id={mobileMembersPanelId}
+            ref={mobileMembersFlyoutRef}
+            className="room-members-flyout"
+            role="dialog"
+            aria-modal="false"
+            aria-label={t("房间成员", "Room members")}
+            style={mobileMembersFlyoutStyle}
+          >
+            <div className="room-members-flyout-panel">
+              <div className="room-members-flyout-head">
+                <span className="room-members-flyout-title">
+                  {t("房间成员", "Room members")}
+                </span>
+                <p className="room-members-flyout-hint">
+                  {t(
+                    "前两位进入的成员为辩手A / 辩手B，其余成员旁听只读。",
+                    "The first two members become Debater A and Debater B. Everyone after that is read-only.",
+                  )}
+                </p>
+              </div>
+
+              <div className="room-members-flyout-list">
+                {roomMeta.members.map((member) => {
+                  const roleLabel = getRoomMemberRoleLabel(member, t);
+                  const statusLabel = getRoomMemberStatusLabel(member, t);
+
+                  return (
+                    <div key={`mobile-${member.userId}`} className="room-members-flyout-row">
+                      <span
+                        className={`room-member-inline ${member.isOnline ? "online" : "offline"}`}
+                        title={`${roleLabel} | @${member.username} | ${statusLabel}`}
+                      >
+                        <span className="room-member-inline-role">{roleLabel}</span>
+                        <span className="room-member-inline-name">@{member.username}</span>
+                        <span
+                          className={`room-member-inline-status ${member.isOnline ? "online" : "offline"}`}
+                          aria-label={statusLabel}
+                        >
+                          <span className="room-member-inline-dot" aria-hidden="true" />
+                        </span>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </>
+  );
 }
 
 function RoomSidebarPanel({
@@ -545,13 +792,15 @@ export function RoomPageView({
   analysisViewState,
   audioContainerRef,
   callButtonClassName,
+  canConnectRoom,
   canLeaveVoiceCall,
+  canParticipate,
   chatInput,
   chatInputRef,
   connectionState,
   copied,
-  currentSpeakerName,
   endingRoom,
+  isAudienceReadOnly,
   isCreator,
   isEnded,
   isInitialConnectionPending,
@@ -599,7 +848,6 @@ export function RoomPageView({
   sendingText,
   showEndRoomConfirm,
   showMobileAnalysis,
-  showSpeakerIdentity,
   showSwitchConfirm,
   speakerMode,
   speakerSwitchEnabled,
@@ -725,14 +973,7 @@ export function RoomPageView({
                 {roomId}
                 {copied && <span className="copy-tooltip">{t("已复制", "Copied")}</span>}
               </span>
-              <span style={{ opacity: 0.5 }}>|</span>
-              <span>@{username}</span>
-              {showSpeakerIdentity && (
-                <>
-                  <span style={{ opacity: 0.5 }}>|</span>
-                  <span>{currentSpeakerName}</span>
-                </>
-              )}
+              <RoomMembersSummary roomMeta={roomMeta} t={t} />
             </div>
           </div>
 
@@ -765,7 +1006,7 @@ export function RoomPageView({
             >
               {t("详情", "Details")}
             </button>
-            {speakerSwitchEnabled && (
+            {speakerSwitchEnabled && canParticipate && (
               <button
                 type="button"
                 className="ghost-btn"
@@ -857,23 +1098,31 @@ export function RoomPageView({
             value={chatInput}
             onChange={(event: ChangeEvent<HTMLTextAreaElement>) => onChatInputChange(event.target.value)}
             onKeyDown={onChatInputKeyDown}
-            placeholder={isEnded ? t("只读模式", "Read-only") : t("输入消息...", "Type a message...")}
+            placeholder={
+              isEnded
+                ? t("只读模式", "Read-only")
+                : isAudienceReadOnly
+                  ? t("旁听席只读", "Audience is read-only")
+                  : t("输入消息...", "Type a message...")
+            }
             disabled={roomInteractionBlocked}
             rows={1}
           />
           <div className="room-chat-controls">
             {connectionState === "connected" ? (
-              <button
-                type="button"
-                className={callButtonClassName}
-                onClick={() => (canLeaveVoiceCall ? onLeaveVoiceCall() : onStartVoiceCall())}
-                disabled={roomInteractionBlocked || voiceCallStarting}
-                aria-busy={voiceCallStarting}
-                data-busy-label={startingCallButtonLabel}
-              >
-                {micEnabled ? t("退出通话", "Leave") : t("通话", "Call")}
-              </button>
-            ) : !roomInteractionBlocked ? (
+              canParticipate ? (
+                <button
+                  type="button"
+                  className={callButtonClassName}
+                  onClick={() => (canLeaveVoiceCall ? onLeaveVoiceCall() : onStartVoiceCall())}
+                  disabled={roomInteractionBlocked || voiceCallStarting}
+                  aria-busy={voiceCallStarting}
+                  data-busy-label={startingCallButtonLabel}
+                >
+                  {micEnabled ? t("退出通话", "Leave") : t("通话", "Call")}
+                </button>
+              ) : null
+            ) : canConnectRoom ? (
               <button
                 type="button"
                 className="ghost-btn"

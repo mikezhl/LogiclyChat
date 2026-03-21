@@ -3,12 +3,20 @@ import { RoomAccessError } from "@/lib/rooms";
 
 export const ROOM_META_HEARTBEAT_INTERVAL_MS = 5_000;
 export const ROOM_OWNER_PRESENCE_TIMEOUT_MS = 15_000;
+export const ROOM_PARTICIPANT_PRESENCE_TIMEOUT_MS = ROOM_OWNER_PRESENCE_TIMEOUT_MS;
 
 export type RoomOwnerPresence = {
   active: boolean;
   lastSeenAt: Date | null;
   timeoutMs: number;
 };
+
+export function isRoomParticipantActive(
+  lastSeenAt: Date | null | undefined,
+  timeoutMs = ROOM_PARTICIPANT_PRESENCE_TIMEOUT_MS,
+) {
+  return lastSeenAt !== null && lastSeenAt !== undefined && Date.now() - lastSeenAt.getTime() <= timeoutMs;
+}
 
 export async function touchRoomParticipantHeartbeat(roomRefId: string, userId: string) {
   const now = new Date();
@@ -59,9 +67,7 @@ export async function getRoomOwnerPresence(
   });
 
   const lastSeenAt = membership?.lastSeenAt ?? null;
-  const active =
-    lastSeenAt !== null &&
-    Date.now() - lastSeenAt.getTime() <= ROOM_OWNER_PRESENCE_TIMEOUT_MS;
+  const active = isRoomParticipantActive(lastSeenAt, ROOM_OWNER_PRESENCE_TIMEOUT_MS);
 
   return {
     active,

@@ -52,6 +52,7 @@ export type TokenResponse = {
   livekitUrl: string;
   identity: string;
   displayName: string;
+  canParticipate: boolean;
   transcriberEnabled: boolean;
   providers: {
     voice: VoiceProviderState;
@@ -63,6 +64,17 @@ export type TokenResponse = {
 export type MessagesResponse = {
   messages: ChatMessage[];
   error?: string;
+};
+
+export type RoomMemberState = {
+  userId: string;
+  username: string;
+  joinedAt: string;
+  lastSeenAt: string | null;
+  isOwner: boolean;
+  isOnline: boolean;
+  debateSlot: "A" | "B" | null;
+  canParticipate: boolean;
 };
 
 export type RoomMetaResponse = {
@@ -78,6 +90,8 @@ export type RoomMetaResponse = {
       lastSeenAt: string | null;
       timeoutMs: number;
     };
+    currentUserCanParticipate: boolean;
+    members: RoomMemberState[];
   };
   providers: {
     voice: VoiceProviderState;
@@ -111,6 +125,8 @@ export type RoomMetaState = {
     lastSeenAt: string | null;
     timeoutMs: number;
   };
+  currentUserCanParticipate: boolean;
+  members: RoomMemberState[];
   providers: {
     voice: VoiceProviderState;
     analysis: AnalysisProviderState;
@@ -172,6 +188,8 @@ export function createInitialRoomMetaState(initialRoomName: string | null): Room
       lastSeenAt: null,
       timeoutMs: 0,
     },
+    currentUserCanParticipate: false,
+    members: [],
     providers: {
       voice: {
         providedBy: {
@@ -439,6 +457,12 @@ export function getOwnerOfflineError(language: UiLanguage) {
   return language === "zh"
     ? "房主当前不在房间，连接已断开。"
     : "Room owner is offline. The live room connection has been disconnected.";
+}
+
+export function getRoomParticipationBlockedError(language: UiLanguage) {
+  return language === "zh"
+    ? "当前仅前两位进入房间的成员可发言或上麦，其余成员为旁听只读。"
+    : "Only the first two room members can speak or use voice. Later members are read-only observers.";
 }
 
 export function hasPublishedMicrophoneTrack(participant: VoiceTrackParticipant) {

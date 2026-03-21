@@ -15,6 +15,7 @@ import { isRoomSpeakerSwitchEnabled } from "@/lib/env";
 import { resolveRoomVoiceRuntimeForOwner } from "@/features/transcription/core/runtime";
 import { createRoomServiceClient, publishChatMessageViaLivekit } from "@/lib/livekit-chat-relay";
 import { toChatMessage } from "@/lib/messages";
+import { assertRoomUserCanParticipate } from "@/lib/room-members";
 import { prisma } from "@/lib/prisma";
 import { assertRoomOwnerActiveOrThrow } from "@/lib/room-presence";
 import { RoomAccessError, assertRoomNotEnded, getAccessibleRoomOrThrow } from "@/lib/rooms";
@@ -130,6 +131,7 @@ export async function POST(request: Request, context: RouteContext) {
     const room = await getAccessibleRoomOrThrow(roomId, user.id);
     assertRoomNotEnded(room.status);
     await assertRoomOwnerActiveOrThrow(room, user.id);
+    await assertRoomUserCanParticipate(room.id, room.createdById, user.id);
     const speakerProfile = buildRoomSpeakerProfile({
       userId: user.id,
       username: user.username,

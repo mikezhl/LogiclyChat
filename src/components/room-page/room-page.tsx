@@ -3,7 +3,6 @@
 import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { getRoomDisplayName } from "@/lib/room-name";
-import { getRoomSpeakerDisplayName } from "@/lib/room-speaker";
 import { useUiLanguage } from "@/lib/use-ui-language";
 
 import { RoomPageView } from "./room-page-view";
@@ -140,24 +139,32 @@ export default function RoomPageClient({
       if (
         sendingText ||
         roomMeta.status === "ENDED" ||
-        (!roomMeta.isCreator && !roomMeta.ownerPresence.active)
+        (!roomMeta.isCreator && !roomMeta.ownerPresence.active) ||
+        !roomMeta.currentUserCanParticipate
       ) {
         return;
       }
 
       event.currentTarget.form?.requestSubmit();
     },
-    [roomMeta.isCreator, roomMeta.ownerPresence.active, roomMeta.status, sendingText],
+    [
+      roomMeta.currentUserCanParticipate,
+      roomMeta.isCreator,
+      roomMeta.ownerPresence.active,
+      roomMeta.status,
+      sendingText,
+    ],
   );
 
   const isEnded = roomMeta.status === "ENDED";
   const ownerActive = roomMeta.isCreator || roomMeta.ownerPresence.active;
-  const roomInteractionBlocked = isEnded || !ownerActive;
+  const canConnectRoom = !isEnded && ownerActive;
+  const roomInteractionBlocked = isEnded || !ownerActive || !roomMeta.currentUserCanParticipate;
+  const isAudienceReadOnly = canConnectRoom && !roomMeta.currentUserCanParticipate;
   const isInitialConnectionPending =
-    connectionState === "disconnected" && !hasAutoConnectAttempted && !roomInteractionBlocked;
+    connectionState === "disconnected" && !hasAutoConnectAttempted && canConnectRoom;
   const roomConnectionStatusClass = isInitialConnectionPending ? "connecting" : connectionState;
   const roomDisplayName = getRoomDisplayName(roomMeta.roomName, roomId);
-  const currentSpeakerName = getRoomSpeakerDisplayName(username, speakerMode);
   const canLeaveVoiceCall = micEnabled && !voiceCallStarting;
   const startingCallButtonLabel = t("启动中", "Starting");
   const callButtonClassName =
@@ -174,10 +181,12 @@ export default function RoomPageClient({
       canLeaveVoiceCall={canLeaveVoiceCall}
       chatInput={chatInput}
       chatInputRef={chatInputRef}
+      canConnectRoom={canConnectRoom}
+      canParticipate={roomMeta.currentUserCanParticipate}
       connectionState={connectionState}
       copied={copied}
-      currentSpeakerName={currentSpeakerName}
       endingRoom={endingRoom}
+      isAudienceReadOnly={isAudienceReadOnly}
       isCreator={roomMeta.isCreator}
       isEnded={isEnded}
       isInitialConnectionPending={isInitialConnectionPending}
@@ -252,7 +261,6 @@ export default function RoomPageClient({
       sendingText={sendingText}
       showEndRoomConfirm={showEndRoomConfirm}
       showMobileAnalysis={showMobileAnalysis}
-      showSpeakerIdentity={roomMeta.features.speakerSwitchEnabled && currentSpeakerName !== username}
       showSwitchConfirm={showSwitchConfirm}
       speakerMode={speakerMode}
       speakerSwitchEnabled={roomMeta.features.speakerSwitchEnabled}
